@@ -1,0 +1,26 @@
+package rio.source;
+
+
+message FeatureSchema {
+    enum FeatureType {
+	REAL = 0;
+	CATEGORICAL = 1;
+    }
+
+    required string name = 1;
+    required FeatureType feature_type = 2;
+}
+
+
+message SourceSchema {
+    repeated FeatureSchema description = 1;
+}
+
+
+message SourceRow {
+    message Feature {
+	optional double real = 1;
+	optional string str = 2;
+    }
+    repeated Feature features = 1;
+}

@@ -1,0 +1,18 @@
+package rio.saltfish;
+
+import "source.proto";
+
+
+message Response {
+    enum Status {
+	OK = 0;
+	INVALID_SCHEMA = 1;
+    }
+    required Status status = 1;
+    optional string msg = 2;
+}
+
+
+service SourceManager  {
+    rpc put_row(source.SourceRow) returns (Response);
+}
