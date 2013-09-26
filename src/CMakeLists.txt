@@ -13,6 +13,10 @@ protobuf_generate_cpp(SERVICE_PB_SRCS SERVICE_PB_HDRS proto/service.proto)
 protobuf_generate_rpcz(SERVICE_RPCZ_SRCS SERVICE_RPCZ_HDRS proto/service.proto)
 set(SERVICE_PB ${SERVICE_PB_SRCS} ${SERVICE_PB_HDRS} ${SERVICE_RPCZ_SRCS} ${SERVICE_RPCZ_HDRS})
 
+protobuf_generate_python(SOURCE_PB_PY proto/source.proto)
+protobuf_generate_python(SERVICE_PB_PY proto/service.proto)
+protobuf_generate_python_rpcz(SERVICE_PB_PY proto/service.proto)
+
 include_directories(${PROJECT_BINARY_DIR}/src)
 
 
@@ -24,16 +28,21 @@ target_link_libraries(service_pb_lib source_pb_lib)
 add_executable(
   saltfish
     main.cpp
+    riak_proxy.cpp
+    riak_proxy.hpp
 )
 
 target_link_libraries(
   saltfish
     source_pb_lib
     service_pb_lib
+    riak-cpp
     rpcz
     ${PROTOBUF_LIBRARY}
     ${Boost_LIBRARIES}
 )
+
+add_dependencies(${PROJECT_NAME} SOURCE_PB_PY SERVICE_PB_PY SERVICE_PB_PY)
 
 add_executable(
   main2
