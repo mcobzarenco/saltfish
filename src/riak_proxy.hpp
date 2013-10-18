@@ -1,44 +1,55 @@
-#ifndef RIO_SALTFISH_RIAK_PROXY_HPP
-#define RIO_SALTFISH_RIAK_PROXY_HPP
+#ifndef REINFERIO_SALTFISH_RIAK_PROXY_HPP
+#define REINFERIO_SALTFISH_RIAK_PROXY_HPP
 
-#include <string>
-
+#include <boost/asio.hpp>
+#include <glog/logging.h>
 #include <riak/client.hxx>
 #include <riak/response_handlers.hxx>
 #include <riak/transports/single_serial_socket.hxx>
 
+#include <string>
+#include <thread>
 
-namespace rio {
+
+namespace reinferio {
 namespace saltfish {
 
 
-typedef std::shared_ptr<riak::client> store_ptr;
+typedef std::shared_ptr<riak::client> client_ptr;
 
 using namespace std::placeholders;
 using std::string;
 
 
 class RiakProxy {
-public:
-    RiakProxy(const string& host, int port);
-    void get_object (const string& bucket, const string& k, riak::get_response_handler);
-private:
+ public:
+  RiakProxy(const string& host, uint16_t port, uint8_t n_workers=3);
+  void get_object (const string& bucket, const string& key,
+                   riak::get_response_handler);
 
-    boost::asio::io_service ios;
-    riak::transport::delivery_provider connection;
-    store_ptr store;
+  virtual ~RiakProxy();
+ private:
+  void connect();
+  void init_threads();
+
+  const string host_;
+  const uint16_t port_;
+  const uint8_t n_workers_;
+
+  boost::asio::io_service ios_;
+  std::unique_ptr<boost::asio::io_service::work> work_;
+  std::vector<std::thread> threads_;
+  riak::transport::delivery_provider connection_;
+  client_ptr client_;
 };
 
 
 std::shared_ptr<riak::object> random_sibling_resolution(const riak::siblings&);
-void print_object_value(const std::error_code& error,
-			std::shared_ptr<riak::object> object,
-			riak::value_updater& update_value);
 
 
 
+}  // namespace reinferio
+}  // namespace saltfish
 
-} // namespace rio
-} // namespace saltfish
 
-#endif  // RIO_SALTFISH_RIAK_PROXY_HPP
+#endif  // REINFERIO_SALTFISH_RIAK_PROXY_HPP
