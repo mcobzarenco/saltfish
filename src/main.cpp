@@ -1,55 +1,81 @@
-#include "service.pb.h"
-#include "service.rpcz.h"
 #include "riak_proxy.hpp"
+#include "service.hpp"
+#include "zmq_riak_transport.hpp"
 
+#include <boost/program_options.hpp>
+#include <glog/logging.h>
 #include <rpcz/rpcz.hpp>
 
 #include <iostream>
+#include <vector>
+#include <thread>
+#include <csignal>
 
 
 using namespace std;
-
-namespace rio {
-namespace saltfish {
+using namespace reinferio;
 
 
-class SourceManagerServer : public SourceManager {
-    public:
-    SourceManagerServer(std::shared_ptr<RiakProxy> riak_proxy);
-    virtual void put_row(const source::SourceRow& request, rpcz::reply<saltfish::Response> response) {
-	std::cout << "Received request: " << std::endl;
-	Response resp;
-	resp.set_status(Response::INVALID_SCHEMA);
-	response.send(resp);
-    }
-
-    private:
-    std::shared_ptr<RiakProxy> riak_proxy;
-
-    // virtual void execute(const ::Query& request, rpcz::reply<Query> response) {
-    // 	cout << "Got: \'" << request.query() << "\'" << endl;
-    // 	Query query;
-    // 	query.set_query(request.query());
-    // 	response.send(query);
-    // }
-
-};
-
-SourceManagerServer::SourceManagerServer(std::shared_ptr<RiakProxy> riak_proxy_):riak_proxy(riak_proxy_) {
-}
-
-}  // namespace rio
-}  // namespace saltfish
-
-
-int main() {
+void start_server(const string& bind_str,
+                  const string& riak_host,
+                  uint16_t riak_port) {
+  try {
     rpcz::application application;
     rpcz::server server(application);
-    auto riak_proxy = std::make_shared<rio::saltfish::RiakProxy>("localhost", 10017);
-    rio::saltfish::SourceManagerServer sms(riak_proxy);
+
+    auto riak_proxy = std::make_shared<saltfish::RiakProxy>(riak_host, riak_port);
+    saltfish::SourceManagerService sms(riak_proxy);
+
     server.register_service(&sms);
-    cout << "Serving requests on port 5555." << endl;
-    server.bind("tcp://127.0.0.1:5555");
+    server.bind(bind_str);
+
+    LOG(INFO) << "Serving requests on " << bind_str;
     application.run();
-    return 0;
+  } catch (const std::exception& e) {
+    LOG(ERROR) << e.what();
+  }
+}
+
+
+int main(int argc, char **argv) {
+  namespace po = boost::program_options;
+  google::InitGoogleLogging(argv[0]);
+  google::LogToStderr();
+
+  auto bind_str = string{"tcp://127.0.0.1:5555"};
+  auto riak_host = string{"127.0.0.1"};
+  auto riak_port = uint16_t{10017};
+
+  auto description = po::options_description{"Allowed options"};
+  description.add_options()
+      ("help,h", "produce help message")
+      ("bind", po::value<string>(&bind_str),
+       "ZeroMQ bind string; default=tcp://127.0.0.1:5555")
+      ("riak-host", po::value<string>(&riak_host),
+       "hostname of a Riak node")
+      ("riak-port", po::value<uint16_t>(&riak_port),
+       "what port to use to connect to Riak (pbc protocol)");
+
+  auto variables = po::variables_map{};
+  try {
+    po::store(po::parse_command_line(argc, argv, description), variables);
+    po::notify(variables);
+
+    if (variables.count("help")) {
+      cerr << description << endl;
+      return 0;
+    }
+
+    LOG(INFO) << "Binding at " << bind_str
+              << " (with Riak @ " << riak_host << ":" << riak_port << ")";
+  } catch (const boost::program_options::unknown_option& e) {
+    LOG(ERROR) << e.what();
+    return 1;
+  } catch (const boost::program_options::invalid_option_value& e) {
+    LOG(ERROR) << e.what();
+    return 2;
+  }
+
+  start_server(bind_str, riak_host, riak_port);
+  return 0;
 }

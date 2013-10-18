@@ -1,26 +1,25 @@
-package rio.source;
+package reinferio.source;
 
 
 message FeatureSchema {
     enum FeatureType {
-	REAL = 0;
-	CATEGORICAL = 1;
+	INVALID = 0;
+	REAL = 1;
+	CATEGORICAL = 2;
+	TEXT = 3;
     }
 
-    required string name = 1;
+    required string feature = 1;
     required FeatureType feature_type = 2;
 }
 
 
-message SourceSchema {
-    repeated FeatureSchema description = 1;
+message Schema {
+    repeated FeatureSchema schema = 1;
 }
 
 
-message SourceRow {
-    message Feature {
-	optional double real = 1;
-	optional string str = 2;
-    }
-    repeated Feature features = 1;
+message Row {
+    repeated double reals = 1;
+    repeated string categoricals  = 2;
 }

@@ -15,7 +15,8 @@ set(SERVICE_PB ${SERVICE_PB_SRCS} ${SERVICE_PB_HDRS} ${SERVICE_RPCZ_SRCS} ${SERV
 
 protobuf_generate_python(SOURCE_PB_PY proto/source.proto)
 protobuf_generate_python(SERVICE_PB_PY proto/service.proto)
-protobuf_generate_python_rpcz(SERVICE_PB_PY proto/service.proto)
+protobuf_generate_python_rpcz(SERVICE_RPCZ_PY proto/service.proto)
+# add_dependencies(${PROJECT_NAME} SOURCE_PB_PY SERVICE_PB_PY SERVICE_RPCZ_PY)
 
 include_directories(${PROJECT_BINARY_DIR}/src)
 
@@ -25,24 +26,58 @@ add_library(service_pb_lib ${SERVICE_PB})
 target_link_libraries(service_pb_lib source_pb_lib)
 
 
+add_library(saltfish_service service.hpp service.cpp ${SERVICE_PB})
+add_library(saltfish_server server.hpp server.cpp ${SERVICE_PB})
+add_library(riak_proxy riak_proxy.hpp riak_proxy.cpp)
+
+
 add_executable(
   saltfish
     main.cpp
-    riak_proxy.cpp
     riak_proxy.hpp
+    server.hpp
+    ${SERVICE_PB}
 )
 
 target_link_libraries(
   saltfish
     source_pb_lib
     service_pb_lib
+    saltfish_service
+    riak_proxy
     riak-cpp
     rpcz
-    ${PROTOBUF_LIBRARY}
+    zmq
     ${Boost_LIBRARIES}
+    ${GLOG_LIBRARY}
+    ${PROTOBUF_LIBRARY}
 )
 
-add_dependencies(${PROJECT_NAME} SOURCE_PB_PY SERVICE_PB_PY SERVICE_PB_PY)
+add_dependencies(${PROJECT_NAME} SOURCE_PB_PY SERVICE_PB_PY SERVICE_RPCZ_PY)
+
+
+add_executable(
+  hwclient
+    hwclient.cpp
+)
+
+target_link_libraries(
+  hwclient
+    zmq
+)
+
+
+add_executable(
+  mtserver
+    mtserver.cpp
+)
+
+target_link_libraries(
+  mtserver
+    zmq
+    pthread
+)
+
 
 add_executable(
   main2
@@ -54,5 +89,17 @@ target_link_libraries(
     riak-cpp
     pthread
     ${PROTOBUF_LIBRARY}
+    ${Boost_LIBRARIES}
+)
+
+
+
+add_executable(
+  tpool
+    tpool.cpp
+)
+
+target_link_libraries(
+  tpool
     ${Boost_LIBRARIES}
 )
