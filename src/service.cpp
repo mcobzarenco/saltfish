@@ -53,7 +53,7 @@ void confirm_put(const Request& request,
   return;
 }
 
-SourceManagerService::SourceManagerService(std::shared_ptr<RiakProxy> riak_proxy_)
+SourceManagerService::SourceManagerService(RiakProxy* riak_proxy_)
     :riak_proxy(riak_proxy_) {
 }
 

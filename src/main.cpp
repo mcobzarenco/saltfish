@@ -1,40 +1,15 @@
-#include "riak_proxy.hpp"
-#include "service.hpp"
-#include "zmq_riak_transport.hpp"
+#include "server.hpp"
 
 #include <boost/program_options.hpp>
 #include <glog/logging.h>
-#include <rpcz/rpcz.hpp>
 
 #include <iostream>
-#include <vector>
-#include <thread>
+#include <string>
 #include <csignal>
 
 
 using namespace std;
 using namespace reinferio;
-
-
-void start_server(const string& bind_str,
-                  const string& riak_host,
-                  uint16_t riak_port) {
-  try {
-    rpcz::application application;
-    rpcz::server server(application);
-
-    auto riak_proxy = std::make_shared<saltfish::RiakProxy>(riak_host, riak_port);
-    saltfish::SourceManagerService sms(riak_proxy);
-
-    server.register_service(&sms);
-    server.bind(bind_str);
-
-    LOG(INFO) << "Serving requests on " << bind_str;
-    application.run();
-  } catch (const std::exception& e) {
-    LOG(ERROR) << e.what();
-  }
-}
 
 
 int main(int argc, char **argv) {
@@ -60,14 +35,10 @@ int main(int argc, char **argv) {
   try {
     po::store(po::parse_command_line(argc, argv, description), variables);
     po::notify(variables);
-
     if (variables.count("help")) {
       cerr << description << endl;
       return 0;
     }
-
-    LOG(INFO) << "Binding at " << bind_str
-              << " (with Riak @ " << riak_host << ":" << riak_port << ")";
   } catch (const boost::program_options::unknown_option& e) {
     LOG(ERROR) << e.what();
     return 1;
@@ -76,6 +47,9 @@ int main(int argc, char **argv) {
     return 2;
   }
 
-  start_server(bind_str, riak_host, riak_port);
+  // saltfish::SaltfishServer server(bind_str, riak_host, riak_port);
+  shared_ptr<saltfish::SaltfishServer> server =
+      saltfish::SaltfishServer::create_server(bind_str, riak_host, riak_port);
+  server->run();
   return 0;
 }

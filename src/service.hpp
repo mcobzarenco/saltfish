@@ -22,11 +22,11 @@ typedef boost::uuids::uuid uuid_t;
 
 class SourceManagerService : public SourceManager {
 public:
-    SourceManagerService(std::shared_ptr<RiakProxy> riak_proxy);
+    SourceManagerService(RiakProxy* riak_proxy);
     virtual void push_rows(const Request& request, rpcz::reply<saltfish::Response> response) override;
 
 private:
-    std::shared_ptr<RiakProxy> riak_proxy;
+    RiakProxy* riak_proxy;
     boost::uuids::random_generator uuid_generator;
 
     // virtual void execute(const ::Query& request, rpcz::reply<Query> response) {
