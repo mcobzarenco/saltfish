@@ -3,22 +3,81 @@ package reinferio.saltfish;
 import "source.proto";
 
 
-message Response {
+/*****************   SourceManager::create_source   *****************/
+
+message CreateSourceRequest {
+    optional string source_id = 1;
+    optional reinferio.source.Schema schema = 2;
+}
+
+message CreateSourceResponse {
     enum Status {
 	OK = 0;
-	INVALID_SCHEMA = 1;
+	ERROR = 1;
     }
-    required Status status = 1;
+    optional Status status = 1;
+    optional string msg = 2;
+
+    optional string source_id = 3;
+}
+
+
+/*****************   SourceManager::delete_source   *****************/
+
+message DeleteSourceRequest {
+    required string source_id = 1;
+}
+
+message DeleteSourceResponse {
+    enum Status {
+	OK = 0;
+	NO_SUCH_SOURCE = 1;
+	ERROR = 2;
+    }
+    optional Status status = 1;
     optional string msg = 2;
 }
 
 
-message Request {
+/*****************    SourceManager::generate_id    *****************/
+
+message GenerateIdRequest {
+    enum IdType {
+	SOURCE = 0;
+	ROW = 1;
+    }
+    optional IdType id_type = 1;
+    optional uint32 count = 2;
+}
+
+message GenerateIdResponse {
+    repeated string ids = 1;
+}
+
+
+/*****************     SourceManager::push_rows     *****************/
+
+message PushRowsRequest {
     required string source_id = 1;
     repeated reinferio.source.Row rows = 2;
 }
 
+message PushRowsResponse {
+    enum Status {
+	OK = 0;
+	INVALID_SCHEMA = 1;
+	ERROR = 2;
+    }
+    optional Status status = 1;
+    optional string msg = 2;
+}
+
+
+/*****************           SourceManager          *****************/
 
 service SourceManager  {
-    rpc push_rows(Request) returns (Response);
+    rpc create_source(CreateSourceRequest) returns (CreateSourceResponse);
+    rpc delete_source(DeleteSourceRequest) returns (DeleteSourceResponse);
+    rpc generate_id(GenerateIdRequest) returns (GenerateIdResponse);
+    rpc push_rows(PushRowsRequest) returns (PushRowsResponse);
 }

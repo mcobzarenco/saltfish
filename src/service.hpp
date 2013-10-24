@@ -23,7 +23,15 @@ typedef boost::uuids::uuid uuid_t;
 class SourceManagerService : public SourceManager {
  public:
   SourceManagerService(RiakProxy* riak_proxy);
-  virtual void push_rows(const Request& request, rpcz::reply<saltfish::Response> response) override;
+  virtual void create_source(const CreateSourceRequest& request,
+                             rpcz::reply<CreateSourceResponse> reply) override;
+  virtual void delete_source(const DeleteSourceRequest& request,
+                             rpcz::reply<DeleteSourceResponse> reply) override;
+  virtual void generate_id(const GenerateIdRequest& request,
+                           rpcz::reply<GenerateIdResponse> reply) override;
+  virtual void push_rows(const PushRowsRequest& request,
+                         rpcz::reply<PushRowsResponse> reply) override;
+
 
  private:
   RiakProxy* riak_proxy;

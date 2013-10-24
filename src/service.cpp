@@ -7,12 +7,12 @@ namespace saltfish {
 using namespace std;
 
 
-void handle_put_result(rpcz::reply<saltfish::Response>& response,
+void handle_put_result(rpcz::reply<saltfish::PushRowsResponse>& response,
 		       const std::error_code& error) {
   if (not error) {
     std::cout << "Successfully put value" << std::endl;
-    Response resp;
-    resp.set_status(Response::OK);
+    PushRowsResponse resp;
+    resp.set_status(PushRowsResponse::OK);
     response.send(resp);
   } else {
     std::cerr << "Could not put value." << std::endl;
@@ -21,8 +21,8 @@ void handle_put_result(rpcz::reply<saltfish::Response>& response,
 }
 
 
-void confirm_put(const Request& request,
-		 rpcz::reply<saltfish::Response>& rpcz_reply,
+void confirm_put(const PushRowsRequest& request,
+		 rpcz::reply<saltfish::PushRowsResponse>& reply,
 		 const std::error_code& error,
 		 std::shared_ptr<riak::object> object,
 		 riak::value_updater& update_value) {
@@ -32,9 +32,9 @@ void confirm_put(const Request& request,
     else
       LOG(INFO) << "Fetch succeeded! No value found." ;
 
-    Response response;
-    response.set_status(Response::OK);
-    rpcz_reply.send(response);
+    PushRowsResponse response;
+    response.set_status(PushRowsResponse::OK);
+    reply.send(response);
 
     // rio::source::FeatureSchema ft;
     // ft.set_name("feat");
@@ -61,15 +61,27 @@ SourceManagerService::SourceManagerService(RiakProxy* riak_proxy_)
     :riak_proxy(riak_proxy_) {
 }
 
-void SourceManagerService::push_rows(const Request& request,
-                                     rpcz::reply<saltfish::Response> response) {
+void SourceManagerService::create_source(const CreateSourceRequest& request,
+                                         rpcz::reply<saltfish::CreateSourceResponse> reply) {
+}
+
+void SourceManagerService::delete_source(const DeleteSourceRequest& request,
+                                         rpcz::reply<saltfish::DeleteSourceResponse> reply) {
+}
+
+void SourceManagerService::generate_id(const GenerateIdRequest& request,
+                                       rpcz::reply<saltfish::GenerateIdResponse> reply) {
+}
+
+void SourceManagerService::push_rows(const PushRowsRequest& request,
+                                     rpcz::reply<saltfish::PushRowsResponse> reply) {
   uuid_t uuid = uuid_generator();
 
   LOG(INFO) << "[" << std::this_thread::get_id()
 	    << "] Adding datapoint to " << request.source_id()
 	    << "/" << uuid;
 
-  auto handler = bind(&confirm_put, request, response,
+  auto handler = bind(&confirm_put, request, reply,
                       placeholders::_1, placeholders::_2, placeholders::_3);
   riak_proxy->get_object(request.source_id(), boost::uuids::to_string(uuid), handler);
 }
