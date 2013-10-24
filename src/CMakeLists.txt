@@ -92,50 +92,15 @@ target_link_libraries(
 add_dependencies(${PROJECT_NAME} SOURCE_PB_PY SERVICE_PB_PY SERVICE_RPCZ_PY)
 
 
-# add_executable(
-#   hwclient
-#     hwclient.cpp
-# )
+add_executable(
+  main2
+    main2.cpp
+)
 
-# target_link_libraries(
-#   hwclient
-#     zmq
-# )
-
-
-# add_executable(
-#   mtserver
-#     mtserver.cpp
-# )
-
-# target_link_libraries(
-#   mtserver
-#     zmq
-#     pthread
-# )
-
-
-# add_executable(
-#   main2
-#     main2.cpp
-# )
-
-# target_link_libraries(
-#   main2
-#     riak-cpp
-#     pthread
-#     ${PROTOBUF_LIBRARY}
-#     ${Boost_LIBRARIES}
-# )
-
-
-
-# add_executable(
-#   tpool
-#     tpool.cpp
-# )
-
-# target_link_libraries(
-#   tpool
-#     ${Boost_LIBRARIES}
-# )
+target_link_libraries(
+  main2
+    riak-cpp
+    pthread
+    ${PROTOBUF_LIBRARY}
+    ${Boost_LIBRARIES}
+)
