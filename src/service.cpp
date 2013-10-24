@@ -22,15 +22,19 @@ void handle_put_result(rpcz::reply<saltfish::Response>& response,
 
 
 void confirm_put(const Request& request,
-		 rpcz::reply<saltfish::Response>& response,
+		 rpcz::reply<saltfish::Response>& rpcz_reply,
 		 const std::error_code& error,
 		 std::shared_ptr<riak::object> object,
 		 riak::value_updater& update_value) {
   if(!error) {
     if (object)
-      cout << "Fetch succeeded! Value is: " << object->value() << endl;
+      LOG(INFO) << "Fetch succeeded! Value is: " << object->value();
     else
-      cout << "Fetch succeeded! No value found." << endl;
+      LOG(INFO) << "Fetch succeeded! No value found." ;
+
+    Response response;
+    response.set_status(Response::OK);
+    rpcz_reply.send(response);
 
     // rio::source::FeatureSchema ft;
     // ft.set_name("feat");
@@ -48,7 +52,7 @@ void confirm_put(const Request& request,
     // riak::put_response_handler put_handler = std::bind(&handle_put_result, response, std::placeholders::_1);
     // update_value(new_key, put_handler);
   } else {
-    std::cout << "Could not receive the object from Riak due to a network or server error." << std::endl;
+    LOG(ERROR) << "Could not receive the object from Riak due to a network or server error.";
   }
   return;
 }
@@ -58,13 +62,12 @@ SourceManagerService::SourceManagerService(RiakProxy* riak_proxy_)
 }
 
 void SourceManagerService::push_rows(const Request& request,
-				    rpcz::reply<saltfish::Response> response) {
-  cout << &riak_proxy << std::endl;
+                                     rpcz::reply<saltfish::Response> response) {
   uuid_t uuid = uuid_generator();
 
-  cout << "[" << std::this_thread::get_id()
-       << "] Adding datapoint to " << request.source_id()
-       << "/" << uuid << std::endl;
+  LOG(INFO) << "[" << std::this_thread::get_id()
+	    << "] Adding datapoint to " << request.source_id()
+	    << "/" << uuid;
 
   auto handler = bind(&confirm_put, request, response,
                       placeholders::_1, placeholders::_2, placeholders::_3);
