@@ -34,7 +34,7 @@ class RiakProxy {
 
   const string host_;
   const uint16_t port_;
-  const uint8_t n_workers_;
+  const uint16_t n_workers_;
 
   boost::asio::io_service ios_;
   std::unique_ptr<boost::asio::io_service::work> work_;
