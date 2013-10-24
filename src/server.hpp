@@ -44,7 +44,7 @@ class SaltfishServer {
 };
 
 
-}  // namespace reinferio
 }  // namespace saltfish
+}  // namespace reinferio
 
 #endif  // REINFERIO_SALTFISH_SERVICE_HPP
