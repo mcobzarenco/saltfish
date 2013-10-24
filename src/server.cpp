@@ -6,26 +6,19 @@ namespace saltfish {
 using namespace std;
 
 
-shared_ptr<SaltfishServer> SaltfishServer::inst_ = nullptr;
-
-
-shared_ptr<SaltfishServer> SaltfishServer::create_server(const std::string& bind_str,
-                                                     const std::string& riak_host,
-                                                     std::uint16_t riak_port) {
-  if(SaltfishServer::inst_ == nullptr) {
-    //SaltfishServer::inst_ = make_shared<SaltfishServer>(bind_str, riak_host, riak_port);
-    SaltfishServer::inst_ = shared_ptr<SaltfishServer>(new SaltfishServer(bind_str, riak_host, riak_port));
-  }
-  return SaltfishServer::inst_;
-}
-
 SaltfishServer::SaltfishServer(const string& bind_str,
 			       const string& riak_host,
 			       uint16_t riak_port)
     :bind_str_(bind_str), riak_host_(riak_host), riak_port_(riak_port),
-     application_(), server_(application_),
+     signal_ios_(), signal_thread_(), application_(), server_(application_),
      riak_proxy_(new RiakProxy(riak_host, riak_port)) {
 }
+
+SaltfishServer::~SaltfishServer() {
+  signal_ios_.stop();
+  signal_thread_->join();
+}
+
 
 void SaltfishServer::run() {
   try {
@@ -34,19 +27,29 @@ void SaltfishServer::run() {
     server_.bind(bind_str_);
     LOG(INFO) << "Serving requests at " << bind_str_
               << " (with Riak @ " << riak_host_ << ":" << riak_port_ << ")";
-    signal(SIGINT, (void (*)(int)) &SaltfishServer::ctrlc_handler);
+
+    boost::asio::signal_set signals(signal_ios_, SIGINT, SIGTERM);
+    auto signal_handler = std::bind(&SaltfishServer::ctrlc_handler, this,
+                                    placeholders::_1, placeholders::_2);
+    signals.async_wait(signal_handler);
+    signal_thread_.reset(new std::thread([&](){signal_ios_.run();}));
+
     application_.run();
+    LOG(INFO) << "Stopping the server...";
   } catch (const std::exception& e) {
     LOG(ERROR) << e.what();
   }
 }
 
 void SaltfishServer::terminate() {
+  application_.terminate();
 }
 
-void SaltfishServer::ctrlc_handler(int signum) {
+void SaltfishServer::ctrlc_handler(
+    const boost::system::error_code& error,
+    int signum) {
   LOG(INFO) << "Interrupt signal (" << signum << ") received.";
-  SaltfishServer::inst_->application_.terminate();
+  terminate();
 }
 
 

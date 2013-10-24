@@ -47,9 +47,9 @@ int main(int argc, char **argv) {
     return 2;
   }
 
-  // saltfish::SaltfishServer server(bind_str, riak_host, riak_port);
-  shared_ptr<saltfish::SaltfishServer> server =
-      saltfish::SaltfishServer::create_server(bind_str, riak_host, riak_port);
-  server->run();
+  saltfish::SaltfishServer server(bind_str, riak_host, riak_port);
+  server.run();
+
+
   return 0;
 }
