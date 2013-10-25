@@ -51,7 +51,13 @@ message GenerateIdRequest {
 }
 
 message GenerateIdResponse {
-    repeated string ids = 1;
+   enum Status {
+	OK = 0;
+	ERROR = 1;
+    }
+    optional Status status = 1;
+    optional string msg = 2;
+    repeated string ids = 3;
 }
 
 

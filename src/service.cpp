@@ -53,6 +53,10 @@ void confirm_put(const PushRowsRequest& request,
     // update_value(new_key, put_handler);
   } else {
     LOG(ERROR) << "Could not receive the object from Riak due to a network or server error.";
+    PushRowsResponse response;
+    response.set_status(PushRowsResponse::ERROR);
+    response.set_msg("Could not connect to the storage backend");
+    reply.send(response);
   }
   return;
 }
