@@ -19,6 +19,10 @@ namespace saltfish {
 
 typedef boost::uuids::uuid uuid_t;
 
+const uint32_t MAX_GENERATE_ID_COUNT{1000};
+const string SOURCES_META_BUCKET{"/ml/sources/schemas/"};
+const string SOURCES_DATA_BUCKET{"/ml/sources/data/"};
+
 
 class SourceManagerService : public SourceManager {
  public:

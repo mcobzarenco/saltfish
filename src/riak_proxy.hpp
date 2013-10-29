@@ -24,10 +24,13 @@ using std::string;
 class RiakProxy {
  public:
   RiakProxy(const string& host, uint16_t port, uint8_t n_workers=3);
-  void get_object (const string& bucket, const string& key,
+  RiakProxy(const RiakProxy&) = delete;
+  RiakProxy& operator=(const RiakProxy&) = delete;
+  virtual ~RiakProxy();
+
+  void get_object(const string& bucket, const string& key,
                    riak::get_response_handler);
 
-  virtual ~RiakProxy();
  private:
   void connect();
   void init_threads();

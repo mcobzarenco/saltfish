@@ -64,8 +64,8 @@ message GenerateIdResponse {
 /*****************     SourceManager::push_rows     *****************/
 
 message PushRowsRequest {
-    required string source_id = 1;
-    repeated reinferio.source.Row rows = 2;
+    optional string source_id = 1;
+    optional reinferio.source.Row rows = 2;
 }
 
 message PushRowsResponse {

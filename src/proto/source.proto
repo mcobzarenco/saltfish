@@ -1,7 +1,7 @@
 package reinferio.source;
 
 
-message FeatureSchema {
+message Feature {
     enum FeatureType {
 	INVALID = 0;
 	REAL = 1;
@@ -9,13 +9,13 @@ message FeatureSchema {
 	TEXT = 3;
     }
 
-    required string feature = 1;
+    required string name = 1;
     required FeatureType feature_type = 2;
 }
 
 
 message Schema {
-    repeated FeatureSchema schema = 1;
+    repeated Feature features = 1;
 }
 
 

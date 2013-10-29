@@ -19,6 +19,8 @@ class SaltfishServer {
   SaltfishServer(const std::string& bind_str,
                  const std::string& riak_host,
                  std::uint16_t riak_port);
+  SaltfishServer(const SaltfishServer&) = delete;
+  SaltfishServer& operator=(const SaltfishServer&) = delete;
   virtual ~SaltfishServer();
 
   void run();
