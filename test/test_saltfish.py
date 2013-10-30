@@ -204,23 +204,23 @@ class SaltfishTester(object):
 
         # log_info('Calling the service %d times, generating 1 id per call' % N)
 
-    def test_push_rows(self):
+    def test_put_records(self):
         return
-        req = service_pb2.PushRowsRequest()
+        req = service_pb2.PutRecordsRequest()
         req.source_id = "abcdef"
 
         row = req.rows.add()
         row.reals.append(3.14159 * 2)
         row.reals.append(-1.0)
-        row.categoricals.append("expensive")
+        row.cats.append("expensive")
 
         row = req.rows.add()
         row.reals.append(2.5)
         row.reals.append(-10.4)
-        row.categoricals.append("cheap")
+        row.cats.append("cheap")
 
         for i in range(10):
-            resp = self._service.push_rows(req, deadline_ms=1000)
+            resp = self._service.put_records(req, deadline_ms=1000)
             print('Received response, status=%d' % resp.status)
 
 

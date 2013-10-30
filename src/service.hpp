@@ -33,13 +33,13 @@ class SourceManagerService : public SourceManager {
                              rpcz::reply<DeleteSourceResponse> reply) override;
   virtual void generate_id(const GenerateIdRequest& request,
                            rpcz::reply<GenerateIdResponse> reply) override;
-  virtual void push_rows(const PushRowsRequest& request,
-                         rpcz::reply<PushRowsResponse> reply) override;
+  virtual void put_records(const PutRecordsRequest& request,
+			   rpcz::reply<PutRecordsResponse> reply) override;
 
 
  private:
-  RiakProxy* riak_proxy;
-  boost::uuids::random_generator uuid_generator;
+  RiakProxy* riak_proxy_;
+  boost::uuids::random_generator uuid_generator_;
 
 };
 

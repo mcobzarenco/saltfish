@@ -61,14 +61,14 @@ message GenerateIdResponse {
 }
 
 
-/*****************     SourceManager::push_rows     *****************/
+/*****************    SourceManager::put_records    *****************/
 
-message PushRowsRequest {
+message PutRecordsRequest {
     optional string source_id = 1;
-    optional reinferio.source.Row rows = 2;
+    optional reinferio.source.Record records = 2;
 }
 
-message PushRowsResponse {
+message PutRecordsResponse {
     enum Status {
 	OK = 0;
 	INVALID_SCHEMA = 1;
@@ -85,5 +85,5 @@ service SourceManager  {
     rpc create_source(CreateSourceRequest) returns (CreateSourceResponse);
     rpc delete_source(DeleteSourceRequest) returns (DeleteSourceResponse);
     rpc generate_id(GenerateIdRequest) returns (GenerateIdResponse);
-    rpc push_rows(PushRowsRequest) returns (PushRowsResponse);
+    rpc put_records(PutRecordsRequest) returns (PutRecordsResponse);
 }

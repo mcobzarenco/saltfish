@@ -33,6 +33,7 @@ string schema_to_str(const source::Schema& schema) {
 }
 
 bool schema_has_duplicates(const source::Schema& schema) {
+  // TODO: Maybe use a more generic function that this..
   set<string> names;
   for (auto feature : schema.features()) {
     if (names.find(feature.name()) != names.end())
@@ -119,8 +120,8 @@ void delete_source_handler(const string& source_id,
   return;
 }
 
-void confirm_put(const PushRowsRequest& request,
-		 rpcz::reply<saltfish::PushRowsResponse>& reply,
+void confirm_put(const PutRecordsRequest& request,
+		 rpcz::reply<saltfish::PutRecordsResponse>& reply,
 		 const std::error_code& error,
 		 std::shared_ptr<riak::object> object,
 		 riak::value_updater& update_value) {
@@ -130,8 +131,8 @@ void confirm_put(const PushRowsRequest& request,
     else
       LOG(INFO) << "Fetch succeeded! No value found." ;
 
-    PushRowsResponse response;
-    response.set_status(PushRowsResponse::OK);
+    PutRecordsResponse response;
+    response.set_status(PutRecordsResponse::OK);
     reply.send(response);
 
     // rio::source::FeatureSchema ft;
@@ -151,16 +152,16 @@ void confirm_put(const PushRowsRequest& request,
     // update_value(new_key, put_handler);
   } else {
     LOG(ERROR) << "Could not receive the object from Riak due to a network or server error.";
-    PushRowsResponse response;
-    response.set_status(PushRowsResponse::ERROR);
+    PutRecordsResponse response;
+    response.set_status(PutRecordsResponse::ERROR);
     response.set_msg("Could not connect to the storage backend");
     reply.send(response);
   }
   return;
 }
 
-SourceManagerService::SourceManagerService(RiakProxy* riak_proxy_)
-    :riak_proxy(riak_proxy_) {
+SourceManagerService::SourceManagerService(RiakProxy* riak_proxy)
+    :riak_proxy_(riak_proxy), uuid_generator_() {
 }
 
 void SourceManagerService::create_source(const CreateSourceRequest& request,
@@ -176,7 +177,7 @@ void SourceManagerService::create_source(const CreateSourceRequest& request,
   string source_id;
   if (request.source_id().empty()) {
     LOG(INFO) << "Request source_id not set, generating one" ;
-    source_id = boost::uuids::to_string(uuid_generator());
+    source_id = boost::uuids::to_string(uuid_generator_());
   } else {
     source_id = request.source_id();
   }
@@ -184,7 +185,7 @@ void SourceManagerService::create_source(const CreateSourceRequest& request,
                       ph::_1,  ph::_2,  ph::_3);
   LOG(INFO) << "creating source (id=" << source_id
 	    << ", schema=" << schema_to_str(request.schema()) << ")";
-  riak_proxy->get_object(SOURCES_META_BUCKET, source_id, handler);
+  riak_proxy_->get_object(SOURCES_META_BUCKET, source_id, handler);
 }
 
 
@@ -193,7 +194,7 @@ void SourceManagerService::delete_source(const DeleteSourceRequest& request,
   // TODO: Make sure the actual data is deleted by some batch job later
   LOG(INFO) << "Deleting source_id=" << request.source_id();
   auto handler = bind(&delete_source_handler, request.source_id(), reply, ph::_1);
-  riak_proxy->delete_object(SOURCES_META_BUCKET, request.source_id(), handler);
+  riak_proxy_->delete_object(SOURCES_META_BUCKET, request.source_id(), handler);
 }
 
 void SourceManagerService::generate_id(const GenerateIdRequest& request,
@@ -205,7 +206,7 @@ void SourceManagerService::generate_id(const GenerateIdRequest& request,
     response.set_status(GenerateIdResponse::OK);
     for(uint32_t i = 0; i < request.count(); ++i) {
       string *id = response.add_ids();
-      *id = boost::uuids::to_string(uuid_generator());
+      *id = boost::uuids::to_string(uuid_generator_());
     }
   } else {
     response.set_status(GenerateIdResponse::ERROR);
@@ -217,12 +218,12 @@ void SourceManagerService::generate_id(const GenerateIdRequest& request,
   reply.send(response);
 }
 
-void SourceManagerService::push_rows(const PushRowsRequest& request,
-                                     rpcz::reply<PushRowsResponse> reply) {
-  uuid_t uuid = uuid_generator();
+void SourceManagerService::put_records(const PutRecordsRequest& request,
+                                       rpcz::reply<PutRecordsResponse> reply) {
+  uuid_t uuid = uuid_generator_();
   auto handler = bind(&confirm_put, request, reply, ph::_1,  ph::_2,  ph::_3);
   LOG(INFO) << "Adding datapoint to " << request.source_id() << "/" << uuid;
-  riak_proxy->get_object(request.source_id(), boost::uuids::to_string(uuid), handler);
+  riak_proxy_->get_object(request.source_id(), boost::uuids::to_string(uuid), handler);
 }
 
 

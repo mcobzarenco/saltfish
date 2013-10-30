@@ -19,7 +19,7 @@ message Schema {
 }
 
 
-message Row {
+message Record {
     repeated double reals = 1;
-    repeated string categoricals  = 2;
+    repeated string cats = 2;
 }
