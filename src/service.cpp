@@ -93,16 +93,18 @@ void create_source_get_handler(const string& source_id,
   return;
 }
 
-void handle_put_result(rpcz::reply<saltfish::PushRowsResponse>& response,
-		       const std::error_code& error) {
-  if (not error) {
-    std::cout << "Successfully put value" << std::endl;
-    PushRowsResponse resp;
-    resp.set_status(PushRowsResponse::OK);
-    response.send(resp);
+void delete_source_handler(const string& source_id,
+                           rpcz::reply<DeleteSourceResponse>& reply,
+                           const std::error_code& error) {
+  DeleteSourceResponse response;
+  if(!error) {
+    LOG(INFO) << "Deletion successful";
+    response.set_status(DeleteSourceResponse::OK);
   } else {
-    std::cerr << "Could not put value." << std::endl;
+    LOG(INFO) << "Deletion failed: " << error;
+    response.set_status(DeleteSourceResponse::ERROR);
   }
+  reply.send(response);
   return;
 }
 
@@ -151,7 +153,7 @@ SourceManagerService::SourceManagerService(RiakProxy* riak_proxy_)
 }
 
 void SourceManagerService::create_source(const CreateSourceRequest& request,
-                                         rpcz::reply<saltfish::CreateSourceResponse> reply) {
+                                         rpcz::reply<CreateSourceResponse> reply) {
   string source_id;
   if (request.source_id().empty()) {
     LOG(INFO) << "Request source_id not set, generating one" ;
@@ -166,14 +168,17 @@ void SourceManagerService::create_source(const CreateSourceRequest& request,
   riak_proxy->get_object(SOURCES_META_BUCKET, source_id, handler);
 }
 
-void SourceManagerService::delete_source(const DeleteSourceRequest& request,
-                                         rpcz::reply<saltfish::DeleteSourceResponse> reply) {
-    // TODO: Make sure the actual data is deleted by some batch job later
 
+void SourceManagerService::delete_source(const DeleteSourceRequest& request,
+                                         rpcz::reply<DeleteSourceResponse> reply) {
+  // TODO: Make sure the actual data is deleted by some batch job later
+  LOG(INFO) << "Deleting source_id=" << request.source_id();
+  auto handler = bind(&delete_source_handler, request.source_id(), reply, ph::_1);
+  riak_proxy->delete_object(SOURCES_META_BUCKET, request.source_id(), handler);
 }
 
 void SourceManagerService::generate_id(const GenerateIdRequest& request,
-                                       rpcz::reply<saltfish::GenerateIdResponse> reply) {
+                                       rpcz::reply<GenerateIdResponse> reply) {
   LOG(INFO) << "Generating " << request.count() << " ids";
 
   GenerateIdResponse response;
@@ -194,7 +199,7 @@ void SourceManagerService::generate_id(const GenerateIdRequest& request,
 }
 
 void SourceManagerService::push_rows(const PushRowsRequest& request,
-                                     rpcz::reply<saltfish::PushRowsResponse> reply) {
+                                     rpcz::reply<PushRowsResponse> reply) {
   uuid_t uuid = uuid_generator();
   auto handler = bind(&confirm_put, request, reply, ph::_1,  ph::_2,  ph::_3);
   LOG(INFO) << "Adding datapoint to " << request.source_id() << "/" << uuid;

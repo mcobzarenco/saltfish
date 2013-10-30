@@ -34,6 +34,12 @@ void RiakProxy::get_object(const string& bucket, const string& key,
   client_->get_object(bucket, key, handler);
 }
 
+void RiakProxy::delete_object(const string& bucket, const string& key,
+			      riak::delete_response_handler handler) {
+    LOG(INFO) << "Queueing Riak delete_object request";
+    client_->delete_object(bucket, key, handler);
+}
+
 RiakProxy::~RiakProxy() {
   LOG(INFO) << "Riak proxy is shutting down..";
   work_.reset();

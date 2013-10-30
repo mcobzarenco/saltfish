@@ -60,7 +60,7 @@ class SaltfishTester(object):
         n_tests = 0
         for t in filter(lambda x: x.startswith('test'), dir(self)):
             n_tests += 1
-            log_info('Running %s' % t)
+            log_run_test('Running %s' % t)
             results[t] = getattr(self, t)()
         log_success('SUCCESS | All %d test functions passed' % n_tests)
         return results
@@ -119,12 +119,43 @@ class SaltfishTester(object):
                       % (SOURCES_META_BUCKET, source_id))
             sys.exit(1)
 
+    ### Test functions ###
+
     def test_create_source_with_given_id(self):
         source_id = 'test_' + str(randint(0, 10000000))
         self.do_test_create_source(source_id)
 
     def test_create_source_with_no_id(self):
         self.do_test_create_source()
+
+    def test_delete_source(self):
+        create_request = make_create_source_req()
+        delete_request = service_pb2.DeleteSourceRequest()
+        try:
+            log_info('Creating a source in order to delete it')
+            create_response = self._service.create_source(create_request, deadline_ms=DEFAULT_DEADLINE)
+            assert create_response.status == service_pb2.CreateSourceResponse.OK
+            source_id = create_response.source_id
+
+            remote_data = self._riakc.bucket(SOURCES_META_BUCKET).get(source_id)
+            assert remote_data.encoded_data is not None
+
+            log_info('Deleting the just created source with id=%s' % source_id)
+            delete_request.source_id = source_id
+            delete_response = self._service.delete_source(delete_request, deadline_ms=DEFAULT_DEADLINE)
+            assert delete_response.status == service_pb2.DeleteSourceResponse.OK
+
+            remote_data = self._riakc.bucket(SOURCES_META_BUCKET).get(source_id)
+            assert remote_data.encoded_data is None
+            log_success(TEST_PASSED)
+
+            log_info('Making a 2nd identical delete_source call to check idempotentcy (source_id=%s)' % source_id)
+            delete_response = self._service.delete_source(delete_request, deadline_ms=DEFAULT_DEADLINE)
+            assert delete_response.status == service_pb2.DeleteSourceResponse.OK
+            log_success(TEST_PASSED)
+        except rpcz.rpc.RpcDeadlineExceeded:
+            log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
+            sys.exit(1)
 
     def test_generate_id_multiple(self):
         N = 10

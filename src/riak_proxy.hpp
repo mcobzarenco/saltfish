@@ -29,7 +29,9 @@ class RiakProxy {
   virtual ~RiakProxy();
 
   void get_object(const string& bucket, const string& key,
-                   riak::get_response_handler);
+                  riak::get_response_handler);
+  void delete_object(const string& bucket, const string& key,
+                     riak::delete_response_handler);
 
  private:
   void connect();

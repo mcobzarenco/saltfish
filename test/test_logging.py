@@ -18,6 +18,10 @@ def ensure_string(log_fun):
     return inner
 
 @ensure_string
+def log_run_test(msg):
+    log.info(ANSI_TERM_YELLOW + msg + ANSI_TERM_NORMAL)
+
+@ensure_string
 def log_info(msg):
     log.info(msg)
 
