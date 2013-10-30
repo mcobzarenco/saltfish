@@ -3,6 +3,7 @@ import sys
 import argparse
 import multiprocessing
 from os.path import join
+from copy import deepcopy
 from random import randint
 
 import google.protobuf
@@ -49,6 +50,13 @@ def make_create_source_req(source_id=None, features=None):
 
 
 class SaltfishTester(object):
+    features = [
+        {'name': 'timestamp_ms', 'type': source_pb2.Feature.REAL},
+        {'name': 'return_stock1', 'type': source_pb2.Feature.REAL},
+        {'name': 'logvol_stock1', 'type': source_pb2.Feature.REAL},
+        {'name': 'sector_stock1', 'type': source_pb2.Feature.CATEGORICAL}
+    ]
+
     def __init__(self, connect_str, riak_host, riak_port):
         self._app = rpcz.Application()
         self._channel = self._app.create_rpc_channel(connect_str)
@@ -66,19 +74,13 @@ class SaltfishTester(object):
         return results
 
     def do_test_create_source(self, source_id=None):
-        features = [
-            {'name': 'timestamp_ms', 'type': source_pb2.Feature.REAL},
-            {'name': 'return_stock1', 'type': source_pb2.Feature.REAL},
-            {'name': 'logvol_stock1', 'type': source_pb2.Feature.REAL},
-            {'name': 'sector_stock1', 'type': source_pb2.Feature.CATEGORICAL}
-        ]
         if source_id:
             log_info('Creating a new source without setting the id..')
         else:
             log_info('Creating a new source with a given id (id=%s)..' % source_id)
 
         try:
-            req = make_create_source_req(source_id, features)
+            req = make_create_source_req(source_id, SaltfishTester.features)
             response = self._service.create_source(req, deadline_ms=DEFAULT_DEADLINE)
             assert response.status == service_pb2.CreateSourceResponse.OK
             if source_id:
@@ -94,7 +96,7 @@ class SaltfishTester(object):
                 'name': x.name,
                 'type': x.feature_type
             }, remote_schema.features)
-            assert remote_features == features
+            assert remote_features == SaltfishTester.features
             log_success(TEST_PASSED)
 
             log_info('Sending a 2nd identical request to check idempotentcy (source_id=%s)'
@@ -104,7 +106,8 @@ class SaltfishTester(object):
             log_success(TEST_PASSED)
 
             log_info('Trying same id, but different schema. ' \
-                     'Expecting error from the service (source_id=%s)' % source_id)
+                     'Error expected (source_id=%s)' % source_id)
+            features = deepcopy(SaltfishTester.features)
             features[1]['type'] = source_pb2.Feature.CATEGORICAL
             req2 = make_create_source_req(source_id, features)
             response = self._service.create_source(req2, deadline_ms=DEFAULT_DEADLINE)
@@ -128,11 +131,25 @@ class SaltfishTester(object):
     def test_create_source_with_no_id(self):
         self.do_test_create_source()
 
+    def test_create_source_duplicate_feature_name(self):
+        features = deepcopy(SaltfishTester.features)
+        features.append(features[0])
+        request = make_create_source_req(features=features)
+        log_info("Creating source with duplicate feature name in schema. Error expected")
+        try:
+            response = self._service.create_source(request, deadline_ms=DEFAULT_DEADLINE)
+            assert response.status == service_pb2.CreateSourceResponse.ERROR
+            log_info('Got error message: "%s"' % response.msg)
+            log_success(TEST_PASSED)
+        except rpcz.rpc.RpcDeadlineExceeded:
+            log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
+            sys.exit(1)
+
     def test_delete_source(self):
         create_request = make_create_source_req()
         delete_request = service_pb2.DeleteSourceRequest()
+        log_info('Creating a source in order to delete it')
         try:
-            log_info('Creating a source in order to delete it')
             create_response = self._service.create_source(create_request, deadline_ms=DEFAULT_DEADLINE)
             assert create_response.status == service_pb2.CreateSourceResponse.OK
             source_id = create_response.source_id
@@ -172,7 +189,7 @@ class SaltfishTester(object):
             sys.exit(1)
 
     def test_generate_id_error(self):
-        log_info('Trying to generate 1000000 ids in one call. Expecting error from the service..')
+        log_info('Trying to generate 1000000 ids in one call. Error expected')
         req = service_pb2.GenerateIdRequest()
         req.count = 1000000
         try:

@@ -1,6 +1,7 @@
 #include "service.hpp"
 
 #include <sstream>
+#include <set>
 
 
 namespace reinferio {
@@ -29,6 +30,16 @@ string schema_to_str(const source::Schema& schema) {
   }
   ss << "]";
   return ss.str();
+}
+
+bool schema_has_duplicates(const source::Schema& schema) {
+  set<string> names;
+  for (auto feature : schema.features()) {
+    if (names.find(feature.name()) != names.end())
+      return true;
+    names.insert(feature.name());
+  }
+  return false;
 }
 
 void create_source_put_handler(const string& source_id,
@@ -154,6 +165,14 @@ SourceManagerService::SourceManagerService(RiakProxy* riak_proxy_)
 
 void SourceManagerService::create_source(const CreateSourceRequest& request,
                                          rpcz::reply<CreateSourceResponse> reply) {
+  if (schema_has_duplicates(request.schema())) {
+    CreateSourceResponse response;
+    response.set_status(CreateSourceResponse::ERROR);
+    response.set_msg("The provided schema contains duplicate feature names.");
+    reply.send(response);
+    return;
+  }
+
   string source_id;
   if (request.source_id().empty()) {
     LOG(INFO) << "Request source_id not set, generating one" ;
