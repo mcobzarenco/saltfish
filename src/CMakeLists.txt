@@ -45,7 +45,6 @@ add_library(
     service.hpp
     service.cpp
     riak_proxy.hpp
-    ${SERVICE_PB}
 )
 target_link_libraries(
   saltfish_service
@@ -64,7 +63,6 @@ add_library(
     server.cpp
     service.hpp
     riak_proxy.hpp
-    ${SERVICE_PB}
 )
 target_link_libraries(
   saltfish_server
