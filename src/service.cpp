@@ -59,11 +59,6 @@ void create_source_get_handler(const string& source_id,
     if (object) {  // There's already a source with the same id
       source::Schema current_schema;
       current_schema.ParseFromString(object->value());
-      LOG(INFO) << "create_source | Found existing source with id=" << source_id
-                << "; schema=" << schema_to_str(current_schema);
-
-      LOG(INFO) << "create_source | schemas are the same: "
-                << (request.schema().SerializeAsString() == object->value());
 
       if (request.schema().SerializeAsString() == object->value()) {
         // Trying to create a source that already exists with identical schema
@@ -73,6 +68,8 @@ void create_source_get_handler(const string& source_id,
         response.set_source_id(source_id);
         reply.send(response);
       } else {
+        LOG(WARNING) << "A source with the same id, but different schema already exists"
+                     << " (source_id=" << source_id << ")";
         CreateSourceResponse response;
         response.set_status(CreateSourceResponse::ERROR);
         response.set_msg("A source with the same id, but different schema already exists");
@@ -80,8 +77,7 @@ void create_source_get_handler(const string& source_id,
       }
       return;
     }
-    else
-      LOG(INFO) << "Fetch succeeded! No value found." ;
+
     auto new_value = std::make_shared<riak::object>();
     request.schema().SerializeToString(new_value->mutable_value());
     riak::put_response_handler handler =
@@ -156,17 +152,24 @@ SourceManagerService::SourceManagerService(RiakProxy* riak_proxy_)
 
 void SourceManagerService::create_source(const CreateSourceRequest& request,
                                          rpcz::reply<saltfish::CreateSourceResponse> reply) {
-  // uuid_t uuid = uuid_generator();
-  auto source_id = request.source_id();
+  string source_id;
+  if (request.source_id().empty()) {
+    LOG(INFO) << "Request source_id not set, generating one" ;
+    source_id = boost::uuids::to_string(uuid_generator());
+  } else {
+    source_id = request.source_id();
+  }
   auto handler = bind(&create_source_get_handler, source_id, request, reply,
                       ph::_1,  ph::_2,  ph::_3);
-  LOG(INFO) << "create_source(source_id=" << source_id
+  LOG(INFO) << "creating source (id=" << source_id
 	    << ", schema=" << schema_to_str(request.schema()) << ")";
   riak_proxy->get_object(SOURCES_META_BUCKET, source_id, handler);
 }
 
 void SourceManagerService::delete_source(const DeleteSourceRequest& request,
                                          rpcz::reply<saltfish::DeleteSourceResponse> reply) {
+    // TODO: Make sure the actual data is deleted by some batch job later
+
 }
 
 void SourceManagerService::generate_id(const GenerateIdRequest& request,

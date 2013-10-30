@@ -119,9 +119,12 @@ class SaltfishTester(object):
                       % (SOURCES_META_BUCKET, source_id))
             sys.exit(1)
 
-    def test_create_source_with_id(self):
+    def test_create_source_with_given_id(self):
         source_id = 'test_' + str(randint(0, 10000000))
         self.do_test_create_source(source_id)
+
+    def test_create_source_with_no_id(self):
+        self.do_test_create_source()
 
     def test_generate_id_multiple(self):
         N = 10
