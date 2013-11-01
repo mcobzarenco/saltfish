@@ -27,16 +27,16 @@ int main(int argc, char **argv) {
   auto riak_port = uint16_t{DEFAULT_RIAK_PORT};
 
   auto description = po::options_description{
-    "Saltfish server (built on " + build_time +") manages \n\nAllowed options:"
+    "Saltfish server (built on " + build_time +") manages schemas and data for soruces.\n\nAllowed options:"
   };
   description.add_options()
-      ("help,h", "produce help message")
+      ("help,h", "prints this help message")
       ("bind", po::value<string>(&bind_str),
        ("ZeroMQ bind string; default=" + bind_str).c_str())
       ("riak-host", po::value<string>(&riak_host),
-       "hostname of a Riak node")
+       "Riak node hostname")
       ("riak-port", po::value<uint16_t>(&riak_port),
-       "what port to use to connect to Riak (pbc protocol)");
+       "Riak node port (pbc protocol)");
 
   auto variables = po::variables_map{};
   try {
