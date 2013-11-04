@@ -45,6 +45,7 @@ add_library(
     service.hpp
     service.cpp
     service_utils.hpp
+    service_utils.cpp
     riak_proxy.hpp
 )
 target_link_libraries(
