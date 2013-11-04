@@ -64,8 +64,9 @@ message GenerateIdResponse {
 /*****************    SourceManager::put_records    *****************/
 
 message PutRecordsRequest {
-    repeated string record_ids = 1;
-    repeated reinferio.source.Record records = 2;
+    required string source_id = 1;
+    repeated string record_ids = 2;
+    repeated reinferio.source.Record records = 3;
 }
 
 message PutRecordsResponse {

@@ -9,9 +9,6 @@
 
 #include <boost/uuid/uuid.hpp>            // uuid class
 #include <boost/uuid/uuid_generators.hpp> // generators
-#include <boost/uuid/uuid_io.hpp>         // streaming operators etc.
-
-#include <thread>
 
 
 namespace reinferio {
@@ -21,7 +18,7 @@ typedef boost::uuids::uuid uuid_t;
 
 const uint32_t MAX_GENERATE_ID_COUNT{1000};
 const string SOURCES_META_BUCKET{"/ml/sources/schemas/"};
-const string SOURCES_DATA_BUCKET{"/ml/sources/data/"};
+const string SOURCES_DATA_BUCKET_ROOT{"/ml/sources/data/"};
 
 
 class SourceManagerService : public SourceManager {
@@ -38,13 +35,18 @@ class SourceManagerService : public SourceManager {
 
 
  private:
+  void put_records_check_handler(const PutRecordsRequest& request,
+                                 rpcz::reply<PutRecordsResponse> reply,
+                                 const std::error_code& error,
+                                 std::shared_ptr<riak::object> object,
+                                 riak::value_updater& update_value);
+
   RiakProxy* riak_proxy_;
   boost::uuids::random_generator uuid_generator_;
-
 };
 
 
-}  // namespace reinferio
 }  // namespace saltfish
+}  // namespace reinferio
 
 #endif  // REINFERIO_SALTFISH_SERVICE_HPP

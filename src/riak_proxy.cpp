@@ -30,7 +30,7 @@ RiakProxy::RiakProxy(const string& host, uint16_t port, uint8_t n_workers)
 
 void RiakProxy::get_object(const string& bucket, const string& key,
                            riak::get_response_handler handler) {
-  LOG(INFO) << "Queueing Riak get_object request";
+  // LOG(INFO) << "Queueing Riak get_object request";
   client_->get_object(bucket, key, handler);
 }
 

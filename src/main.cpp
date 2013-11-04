@@ -39,6 +39,7 @@ int main(int argc, char **argv) {
        "Riak node port (pbc protocol)");
 
   auto variables = po::variables_map{};
+
   try {
     po::store(po::parse_command_line(argc, argv, description), variables);
     po::notify(variables);
@@ -46,7 +47,6 @@ int main(int argc, char **argv) {
       cerr << description << endl;
       return 0;
     }
-
     saltfish::SaltfishServer server(bind_str, riak_host, riak_port);
     server.run();
 

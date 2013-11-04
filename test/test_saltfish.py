@@ -20,7 +20,7 @@ DEFAULT_RIAK_HOST = 'localhost'
 DEFAULT_RIAK_PORT = 10017
 
 SOURCES_META_BUCKET = '/ml/sources/schemas/'
-SOURCES_DATA_BUCKET = '/ml/sources/data/'
+SOURCES_DATA_BUCKET_ROOT = '/ml/sources/data/'
 
 TEST_PASSED = '*** OK ***'
 FAILED_PREFIX = 'TEST FAILED | '
@@ -39,14 +39,31 @@ import service_rpcz
 
 def make_create_source_req(source_id=None, features=None):
     features = features or []
-    req = service_pb2.CreateSourceRequest()
+    request = service_pb2.CreateSourceRequest()
     if source_id:
-        req.source_id = source_id
+        request.source_id = source_id
     for f in features:
-        new_feat = req.schema.features.add()
+        new_feat = request.schema.features.add()
         new_feat.name = f['name']
         new_feat.feature_type = f['type']
-    return req
+    return request
+
+
+def filter_by_type(seq, typ):
+    return filter(lambda val: isinstance(val, typ), seq)
+
+
+def make_put_records_req(source_id, record_ids=None, records=None):
+    records = records or []
+    request = service_pb2.PutRecordsRequest()
+    request.source_id = source_id
+    if record_ids:
+        request.record_ids.extend(record_ids)
+    for record in records:
+        new_record = request.records.add()
+        new_record.reals.extend(filter_by_type(record, float))
+        new_record.cats.extend(filter_by_type(record, str))
+    return request
 
 
 class SaltfishTester(object):
@@ -55,6 +72,13 @@ class SaltfishTester(object):
         {'name': 'return_stock1', 'type': source_pb2.Feature.REAL},
         {'name': 'logvol_stock1', 'type': source_pb2.Feature.REAL},
         {'name': 'sector_stock1', 'type': source_pb2.Feature.CATEGORICAL}
+    ]
+
+    records = [
+        [103.31, 0.01, 97041., 'pharma'],
+        [103.47, -0.31, 22440., 'telecomms'],
+        [104.04, 0.41, 2145., 'tech'],
+        [102.40, -1.14, 21049., 'utilities']
     ]
 
     def __init__(self, connect_str, riak_host, riak_port):
@@ -204,24 +228,44 @@ class SaltfishTester(object):
 
         # log_info('Calling the service %d times, generating 1 id per call' % N)
 
-    def test_put_records(self):
-        return
-        req = service_pb2.PutRecordsRequest()
-        req.source_id = "abcdef"
+    def test_put_records_with_new_source(self):
+        try:
+            log_info('Creating a source where the records will be inserted')
+            create_source_req = make_create_source_req(features=SaltfishTester.features)
+            create_source_resp = self._service.create_source(create_source_req, deadline_ms=DEFAULT_DEADLINE)
+            assert create_source_resp.status == service_pb2.CreateSourceResponse.OK
+            source_id = create_source_resp.source_id
 
-        row = req.rows.add()
-        row.reals.append(3.14159 * 2)
-        row.reals.append(-1.0)
-        row.cats.append("expensive")
+            log_info('Inserting %d records into newly created source (id=%s)' %
+                     (len(SaltfishTester.records), source_id))
+            request = make_put_records_req(source_id, records=SaltfishTester.records)
+            log_info("reals=%s; cats=%s" % (str(request.records[0].reals), str(request.records[0].cats)))
+            response = self._service.put_records(request, deadline_ms=DEFAULT_DEADLINE)
+            assert response.status == service_pb2.PutRecordsResponse.OK
+            assert len(response.record_ids) == len(SaltfishTester.records)
+            bucket = SOURCES_DATA_BUCKET_ROOT + source_id + '/'
+            for record_id in response.record_ids:
+                     log_info('Checking record at b=%s / k=%s)' % (bucket, record_id))
+                     remote_data = self._riakc.bucket(bucket).get(record_id)
+                     assert remote_data.encoded_data is not None
+            log_info('Got message: "%s"' % response.msg)
+        except rpcz.rpc.RpcDeadlineExceeded:
+            log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
+            sys.exit(1)
 
-        row = req.rows.add()
-        row.reals.append(2.5)
-        row.reals.append(-10.4)
-        row.cats.append("cheap")
-
-        for i in range(10):
-            resp = self._service.put_records(req, deadline_ms=1000)
-            print('Received response, status=%d' % resp.status)
+    def test_put_records_with_nonexistent_source(self):
+        try:
+            source_id = "random_source_id_that_does_not_exist"
+            log_info('Inserting %d records into a non-exsistent source (id=%s) Error expected' %
+                     (len(SaltfishTester.records), source_id))
+            request = make_put_records_req(source_id, records=SaltfishTester.records)
+            response = self._service.put_records(request, deadline_ms=DEFAULT_DEADLINE)
+            assert response.status == service_pb2.PutRecordsResponse.ERROR
+            assert len(response.record_ids) == 0
+            log_info('Got error message: "%s"' % response.msg)
+        except rpcz.rpc.RpcDeadlineExceeded:
+            log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
+            sys.exit(1)
 
 
 if __name__ == '__main__':

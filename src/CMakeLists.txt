@@ -44,6 +44,7 @@ add_library(
   saltfish_service
     service.hpp
     service.cpp
+    service_utils.hpp
     riak_proxy.hpp
 )
 target_link_libraries(
