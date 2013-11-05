@@ -88,6 +88,7 @@ PutRecordsReplier::~PutRecordsReplier() {
   // LOG(INFO) << "Destroying a PutRecordsReplier with " << n_records_;
 }
 
+// TODO(mcobzarenco): Change to single mutex.
 void PutRecordsReplier::reply(PutRecordsResponse::Status status, const string& msg) {
   if (already_replied_) {
     return;
@@ -102,23 +103,22 @@ void PutRecordsReplier::reply(PutRecordsResponse::Status status, const string& m
     response.set_msg(msg);
     reply_.send(response);
     already_replied_ = true;
+    return;
   } else {
     lock_guard<mutex> n_resp_recieved_lock(n_resp_received_mutex_);
     n_resp_received_++;
   }
 
-  CHECK(n_resp_received_ <= n_records_) << "Received more responses than expected";
+  CHECK_LE(n_resp_received_, n_records_) << "Received more responses than expected";
   if (n_resp_received_ == n_records_) {
     lock_guard<mutex> reply_lock(reply_mutex_);
     if (already_replied_)
       return;
 
-    string* record_id = nullptr;
     PutRecordsResponse response;
     response.set_status(PutRecordsResponse::OK);
-    for (auto rid : record_ids_) {
-      record_id = response.add_record_ids();
-      *record_id = rid;
+    for (const auto& rid : record_ids_) {
+      response.add_record_ids(rid);
     }
     reply_.send(response);
     already_replied_ = true;

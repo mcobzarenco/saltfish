@@ -25,12 +25,15 @@ typedef boost::uuids::uuid uuid_t;
 
 // TODO(mcobzarenco): Convert to const char[], make extern and move to .cpp.
 const uint32_t MAX_GENERATE_ID_COUNT{1000};
-const std::string SOURCES_META_BUCKET{"/ml/sources/schemas/"};
+const std::string SOURCES_METADATA_BUCKET{"/ml/sources/schemas/"};
 const std::string SOURCES_DATA_BUCKET_ROOT{"/ml/sources/data/"};
 
 
-// TODO(mcobzrenco): SourceManager -> SourceManagerService and
+// TODO(mcobzarenco): SourceManager -> SourceManagerService and
 // SourceManagerService->SourceManagerServiceImpl.
+// TODO(mcobzarenco): SourceManagerService is not thread-safe (!).
+// TODO(mcobzarenco): Error reporting member function (reply<>, error_code).
+// With array from codes -> string.
 class SourceManagerService : public SourceManager {
  public:
   SourceManagerService(RiakProxy* riak_proxy);

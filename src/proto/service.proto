@@ -12,8 +12,11 @@ message CreateSourceRequest {
 
 message CreateSourceResponse {
     enum Status {
-	OK = 0;
-	ERROR = 1;
+	UNKNOWN_ERROR = 0;
+	OK = 1;
+        DUPLICATE_FEATURE_NAME = 2;
+        SOURCE_ID_ALREADY_EXISTS = 3;
+        NETWORK_ERROR = 4;
     }
     optional Status status = 1;
     optional string msg = 2;
@@ -30,9 +33,9 @@ message DeleteSourceRequest {
 
 message DeleteSourceResponse {
     enum Status {
-	OK = 0;
-	NO_SUCH_SOURCE = 1;
-	ERROR = 2;
+	UNKNOWN_ERROR = 0;
+	OK = 1;
+	NETWORK_ERROR = 2;
     }
     optional Status status = 1;
     optional string msg = 2;
@@ -43,8 +46,9 @@ message DeleteSourceResponse {
 
 message GenerateIdRequest {
     enum IdType {
-	SOURCE = 0;
-	ROW = 1;
+        INVALID = 0;
+	SOURCE = 1;
+	ROW = 2;
     }
     optional IdType id_type = 1;
     optional uint32 count = 2;
@@ -52,8 +56,9 @@ message GenerateIdRequest {
 
 message GenerateIdResponse {
    enum Status {
-	OK = 0;
-	ERROR = 1;
+	UNKNOWN_ERROR = 0;
+	OK = 1;
+	COUNT_TOO_LARGE = 2;
     }
     optional Status status = 1;
     optional string msg = 2;
@@ -63,17 +68,27 @@ message GenerateIdResponse {
 
 /*****************    SourceManager::put_records    *****************/
 
+// TODO(mcobzarenco): Add request_ids instead/in addition to record_ids.
+// TODO(mcobzarenco): Created nested message for id-record pair or message for
+// batch.
+// TODO(mcobzarenco): Think about what happens to empty record_ids.
+// TODO(mcobzarenco): Make Metadata message type which contains Schema.
 message PutRecordsRequest {
-    required string source_id = 1;
+    optional string source_id = 1;
     repeated string record_ids = 2;
     repeated reinferio.source.Record records = 3;
 }
 
 message PutRecordsResponse {
     enum Status {
-	OK = 0;
-	INVALID_SCHEMA = 1;
-	ERROR = 2;
+	UNKNOWN_ERROR = 0;
+	OK = 1;
+	INVALID_SCHEMA = 2;
+        INVALID_SOURCE_ID = 3;
+        NO_RECORDS_IN_REQUEST = 4;
+        WRONG_NUMBER_OF_IDS = 5;
+        INVALID_RECORD = 6;
+        NETWORK_ERROR = 7;
     }
     optional Status status = 1;
     optional string msg = 2;

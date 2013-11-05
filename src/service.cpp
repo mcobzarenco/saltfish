@@ -29,6 +29,8 @@ SourceManagerService::SourceManagerService(RiakProxy* riak_proxy)
 
 /***********      SourceManagerService::create_source     ***********/
 
+namespace {
+
 void create_source_put_handler(const string& source_id,
                                rpcz::reply<CreateSourceResponse> reply,
                                const std::error_code& error) {
@@ -40,25 +42,24 @@ void create_source_put_handler(const string& source_id,
     response.set_source_id(source_id);
     reply.send(response);
   } else {
-    LOG(ERROR) << "Could not receive the object from Riak due to a network or server error.";
-    response.set_status(CreateSourceResponse::ERROR);
+    LOG(ERROR) << "Could not receive the object from Riak due to a network or "
+               << "server error: " << error;
+    response.set_status(CreateSourceResponse::NETWORK_ERROR);
     response.set_msg("Could not connect to the storage backend");
     reply.send(response);
   }
-  return;
 }
 
 void create_source_get_handler(const string& source_id,
-			       const CreateSourceRequest& request,
-			       rpcz::reply<CreateSourceResponse> reply,
-			       const std::error_code& error,
-			       std::shared_ptr<riak::object> object,
+                               const CreateSourceRequest& request,
+                               rpcz::reply<CreateSourceResponse> reply,
+                               const std::error_code& error,
+                               std::shared_ptr<riak::object> object,
                                riak::value_updater& update_value) {
   if (!error) {
     if (object) {  // There's already a source with the same id
-      source::Schema current_schema;
-      current_schema.ParseFromString(object->value());
-
+      // TODO(cristicbz): Extract to functions that check equality & equivalence
+      // of protobufs.
       if (request.schema().SerializeAsString() == object->value()) {
         // Trying to create a source that already exists with identical schema
         // Nothing to do - such that the call is idempotent
@@ -70,33 +71,35 @@ void create_source_get_handler(const string& source_id,
         LOG(WARNING) << "A source with the same id, but different schema already exists"
                      << " (source_id=" << source_id << ")";
         CreateSourceResponse response;
-        response.set_status(CreateSourceResponse::ERROR);
+        response.set_status(CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS);
         response.set_msg("A source with the same id, but different schema already exists");
         reply.send(response);
       }
-      return;
+    } else {
+      auto new_value = std::make_shared<riak::object>();
+      request.schema().SerializeToString(new_value->mutable_value());
+      riak::put_response_handler handler =
+          std::bind(&create_source_put_handler, source_id, reply, ph::_1);
+      update_value(new_value, handler);
     }
-
-    auto new_value = std::make_shared<riak::object>();
-    request.schema().SerializeToString(new_value->mutable_value());
-    riak::put_response_handler handler =
-        std::bind(&create_source_put_handler, source_id, reply, std::placeholders::_1);
-    update_value(new_value, handler);
   } else {
-    LOG(ERROR) << "Could not receive the object from Riak due to a network or server error.";
+    LOG(ERROR) << "Could not receive the object from Riak due to a network or "
+               << "server error: " << error;
     CreateSourceResponse response;
-    response.set_status(CreateSourceResponse::ERROR);
+    response.set_status(CreateSourceResponse::NETWORK_ERROR);
     response.set_msg("Could not connect to the storage backend");
     reply.send(response);
   }
-  return;
 }
+
+}  // namespace
 
 void SourceManagerService::create_source(const CreateSourceRequest& request,
                                          rpcz::reply<CreateSourceResponse> reply) {
   if (schema_has_duplicates(request.schema())) {
     CreateSourceResponse response;
-    response.set_status(CreateSourceResponse::ERROR);
+    response.set_status(CreateSourceResponse::DUPLICATE_FEATURE_NAME);
+    // TODO(mcobzarenco): Error messages in constants.
     response.set_msg("The provided schema contains duplicate feature names.");
     reply.send(response);
     return;
@@ -112,12 +115,14 @@ void SourceManagerService::create_source(const CreateSourceRequest& request,
   auto handler = bind(&create_source_get_handler, source_id, request, reply,
                       ph::_1,  ph::_2,  ph::_3);
   LOG(INFO) << "creating source (id=" << source_id
-	    << ", schema=" << schema_to_str(request.schema()) << ")";
-  riak_proxy_->get_object(SOURCES_META_BUCKET, source_id, handler);
+            << ", schema=" << schema_to_str(request.schema()) << ")";
+  riak_proxy_->get_object(SOURCES_METADATA_BUCKET, source_id, handler);
 }
 
 
 /***********      SourceManagerService::delete_source     ***********/
+
+namespace {
 
 void delete_source_handler(const string& source_id,
                            rpcz::reply<DeleteSourceResponse> reply,
@@ -128,18 +133,20 @@ void delete_source_handler(const string& source_id,
     response.set_status(DeleteSourceResponse::OK);
   } else {
     LOG(INFO) << "Deletion failed: " << error;
-    response.set_status(DeleteSourceResponse::ERROR);
+    response.set_status(DeleteSourceResponse::NETWORK_ERROR);
   }
   reply.send(response);
   return;
 }
+
+}  // namespace
 
 void SourceManagerService::delete_source(const DeleteSourceRequest& request,
                                          rpcz::reply<DeleteSourceResponse> reply) {
   // TODO: Make sure the actual data is deleted by some job later
   LOG(INFO) << "delete_source(source_id=" << request.source_id() << ")";
   auto handler = bind(&delete_source_handler, request.source_id(), reply, ph::_1);
-  riak_proxy_->delete_object(SOURCES_META_BUCKET, request.source_id(), handler);
+  riak_proxy_->delete_object(SOURCES_METADATA_BUCKET, request.source_id(), handler);
 }
 
 
@@ -153,15 +160,14 @@ void SourceManagerService::generate_id(const GenerateIdRequest& request,
   if(request.count() < MAX_GENERATE_ID_COUNT) {
     response.set_status(GenerateIdResponse::OK);
     for(uint32_t i = 0; i < request.count(); ++i) {
-      string *id = response.add_ids();
-      *id = boost::uuids::to_string(uuid_generator_());
+      response.add_ids(boost::uuids::to_string(uuid_generator_()));
     }
   } else {
-    response.set_status(GenerateIdResponse::ERROR);
-    ostringstream ss;
-    ss << "Cannot generate more than " << MAX_GENERATE_ID_COUNT
-       << " in one call (" << request.count() << " requested)";
-    response.set_msg(ss.str());
+    response.set_status(GenerateIdResponse::COUNT_TOO_LARGE);
+    ostringstream msg;
+    msg << "Cannot generate more than " << MAX_GENERATE_ID_COUNT
+        << " in one call (" << request.count() << " requested)";
+    response.set_msg(msg.str());
   }
   reply.send(response);
 }
@@ -169,12 +175,14 @@ void SourceManagerService::generate_id(const GenerateIdRequest& request,
 
 /***********       SourceManagerService::put_records       ***********/
 
+namespace {
+
 void put_records_put_handler(shared_ptr<PutRecordsReplier> replier,
                              const std::error_code& error) {
   if (!error) {
-    replier->reply(PutRecordsResponse::OK, "just testing");
+    replier->reply(PutRecordsResponse::OK, {});
   } else {
-    replier->reply(PutRecordsResponse::ERROR,
+    replier->reply(PutRecordsResponse::NETWORK_ERROR,
                    "Could not connect to the storage backend");
   }
   return;
@@ -192,11 +200,13 @@ void put_records_get_handler(const source::Record& record,
         std::bind(&put_records_put_handler, replier, std::placeholders::_1);
     update_value(new_record, handler);
   } else {
-    replier->reply(PutRecordsResponse::ERROR,
+    replier->reply(PutRecordsResponse::NETWORK_ERROR,
                    "Could not connect to the storage backend");
   }
   return;
 }
+
+}  // namespace
 
 void SourceManagerService::put_records_check_handler(const PutRecordsRequest& request,
                                                      rpcz::reply<PutRecordsResponse> reply,
@@ -211,7 +221,7 @@ void SourceManagerService::put_records_check_handler(const PutRecordsRequest& re
       if (!result.first) {
         LOG(INFO) << "Invalid record in put_records request: " << result.second;
         PutRecordsResponse response;
-        response.set_status(PutRecordsResponse::ERROR);
+        response.set_status(PutRecordsResponse::INVALID_RECORD);
         response.set_msg(result.second);
         reply.send(response);
         return;
@@ -222,18 +232,19 @@ void SourceManagerService::put_records_check_handler(const PutRecordsRequest& re
       vector<string> record_ids;
       if (n_record_ids == 0) {
         for (uint32_t i = 0; i < n_records; ++i)
-          record_ids.push_back(boost::uuids::to_string(uuid_generator_()));
+          record_ids.emplace_back(
+              move(boost::uuids::to_string(uuid_generator_())));
       } else {
-        CHECK(record_ids.size() == static_cast<size_t>(request.records_size()))
+        CHECK_EQ(n_record_ids, n_records)
             << "Expected the same number of records and record_ids";
-        for (uint32_t i = 0; i < n_record_ids; ++i)
-          record_ids.push_back(request.record_ids(i));
+        record_ids.assign(request.record_ids().begin(),
+                          request.record_ids().end());
       }
 
       auto replier = make_shared<PutRecordsReplier>(record_ids, reply);
       for (uint32_t i = 0; i < n_records; ++i) {
         const string& record_id = record_ids[i];
-        const source::Record& record = request.records().Get(i);
+        const source::Record& record = request.records(i);
         auto handler = bind(&put_records_get_handler, record, replier,
                             ph::_1,  ph::_2,  ph::_3);
         ostringstream bucket;
@@ -246,15 +257,16 @@ void SourceManagerService::put_records_check_handler(const PutRecordsRequest& re
       LOG(INFO) << "got put_records request for non-existent source";
       ostringstream msg;
       PutRecordsResponse response;
-      response.set_status(PutRecordsResponse::ERROR);
+      response.set_status(PutRecordsResponse::INVALID_SOURCE_ID);
       msg << "Source does not exist (id=" << request.source_id() << ")";
       response.set_msg(msg.str());
       reply.send(response);
     }
   } else {
-    LOG(ERROR) << "Could not receive the object from Riak due to a network or server error.";
+    LOG(ERROR) << "Could not receive the object from Riak due to a network or "
+               << "server error.";
     PutRecordsResponse response;
-    response.set_status(PutRecordsResponse::ERROR);
+    response.set_status(PutRecordsResponse::NETWORK_ERROR);
     response.set_msg("Could not connect to the storage backend");
     reply.send(response);
   }
@@ -294,36 +306,39 @@ void put_handler(const PutRecordsRequest& request,
   } else {
     LOG(ERROR) << "Could not receive the object from Riak due to a network or server error.";
     PutRecordsResponse response;
-    response.set_status(PutRecordsResponse::ERROR);
+//    response.set_status(PutRecordsResponse::ERROR);
     response.set_msg("Could not connect to the storage backend");
     reply.send(response);
   }
   return;
 }
 
+
 void SourceManagerService::put_records(const PutRecordsRequest& request,
                                        rpcz::reply<PutRecordsResponse> reply) {
   uint32_t n_record_ids = request.record_ids_size();
   uint32_t n_records = request.records_size();
 
-  if (request.source_id() == "") {
+  if (request.source_id().empty()) {
     LOG(INFO) << "source_id not set in a put_records request";
     PutRecordsResponse response;
-    response.set_status(PutRecordsResponse::ERROR);
-    response.set_msg("source_id needs to be set");
+    response.set_status(PutRecordsResponse::INVALID_SOURCE_ID);
+    response.set_msg("source_id is empty");
     reply.send(response);
     return;
-  } else if (n_records == 0) {
+  }
+  if (n_records == 0) {
     LOG(INFO) << "Got empty put_records request";
     PutRecordsResponse response;
-    response.set_status(PutRecordsResponse::ERROR);
+    response.set_status(PutRecordsResponse::NO_RECORDS_IN_REQUEST);
     response.set_msg("no records in the request");
     reply.send(response);
     return;
-  } else if (n_record_ids > 0 && n_record_ids != n_records) {
+  }
+  if (n_record_ids > 0 && n_record_ids != n_records) {
     LOG(INFO) << "Got invalid put_records request with n_records_ids != n_records";
     PutRecordsResponse response;
-    response.set_status(PutRecordsResponse::ERROR);
+    response.set_status(PutRecordsResponse::WRONG_NUMBER_OF_IDS);
     response.set_msg("n_records_ids != n_records");
     reply.send(response);
     return;
@@ -331,7 +346,7 @@ void SourceManagerService::put_records(const PutRecordsRequest& request,
 
   auto handler = bind(&SourceManagerService::put_records_check_handler,
                       this, request, reply, ph::_1, ph::_2, ph::_3);
-  riak_proxy_->get_object(SOURCES_META_BUCKET, request.source_id(), handler);
+  riak_proxy_->get_object(SOURCES_METADATA_BUCKET, request.source_id(), handler);
 }
 
 

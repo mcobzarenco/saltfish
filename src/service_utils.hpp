@@ -14,6 +14,7 @@
 namespace reinferio {
 namespace saltfish {
 
+// TODO(mcobzarenco): You can use .DebugString().
 std::string schema_to_str(const source::Schema& schema);
 bool schema_has_duplicates(const source::Schema& schema);
 std::pair<bool, string> put_records_check_schema(
@@ -38,7 +39,6 @@ class PutRecordsReplier {
   std::mutex reply_mutex_;
   bool already_replied_;
 };
-
 
 }  // namespace saltfish
 }  // namespace reinferio
