@@ -1,18 +1,13 @@
 #ifndef REINFERIO_SALTFISH_SERVICE_UTILS_HPP
 #define REINFERIO_SALTFISH_SERVICE_UTILS_HPP
 
-#include "source.pb.h"
-#include "service.pb.h"
 #include "service.rpcz.h"
 #include "riak_proxy.hpp"
 
 #include <rpcz/rpcz.hpp>
 
-#include <string>
-#include <thread>
 #include <mutex>
-#include <sstream>
-#include <set>
+#include <string>
 #include <utility>
 
 
@@ -21,8 +16,8 @@ namespace saltfish {
 
 std::string schema_to_str(const source::Schema& schema);
 bool schema_has_duplicates(const source::Schema& schema);
-std::pair<bool, string> put_records_check_schema(const source::Schema& schema,
-                                                 const PutRecordsRequest& request);
+std::pair<bool, string> put_records_check_schema(
+    const source::Schema& schema, const PutRecordsRequest& request);
 
 class PutRecordsReplier {
  public:

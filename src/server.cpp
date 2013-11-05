@@ -9,18 +9,19 @@ using namespace std;
 SaltfishServer::SaltfishServer(const string& bind_str,
 			       const string& riak_host,
 			       uint16_t riak_port)
-    :bind_str_(bind_str), riak_host_(riak_host), riak_port_(riak_port),
-     signal_ios_(), signal_thread_(), application_(), server_(application_),
-     riak_proxy_(new RiakProxy(riak_host, riak_port)) {
+    : bind_str_(bind_str), riak_host_(riak_host), riak_port_(riak_port),
+      signal_ios_(), signal_thread_(), application_(), server_(application_) {
+  riak_proxy_.reset(new RiakProxy(riak_host, riak_port));
 }
 
 SaltfishServer::~SaltfishServer() {
-  signal_ios_.stop();
-  signal_thread_->join();
+  if (signal_thread_ != nullptr) {
+    signal_ios_.stop();
+    signal_thread_->join();
+  }
 }
 
-
-void SaltfishServer::run() {
+void SaltfishServer::run() noexcept {
   try {
     saltfish::SourceManagerService sms(riak_proxy_.get());
     server_.register_service(&sms);
@@ -32,7 +33,7 @@ void SaltfishServer::run() {
     auto signal_handler = std::bind(&SaltfishServer::ctrlc_handler, this,
                                     placeholders::_1, placeholders::_2);
     signals.async_wait(signal_handler);
-    signal_thread_.reset(new std::thread([&](){signal_ios_.run();}));
+    signal_thread_.reset(new std::thread([&]() { signal_ios_.run(); }));
 
     application_.run();
     LOG(INFO) << "Stopping the server...";
@@ -41,13 +42,13 @@ void SaltfishServer::run() {
   }
 }
 
-void SaltfishServer::terminate() {
+void SaltfishServer::terminate() noexcept {
   application_.terminate();
 }
 
 void SaltfishServer::ctrlc_handler(
     const boost::system::error_code& error,
-    int signum) {
+    int signum) noexcept {
   LOG(INFO) << "Interrupt signal (" << signum << ") received.";
   terminate();
 }

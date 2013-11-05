@@ -1,5 +1,13 @@
 #include "service_utils.hpp"
 
+#include "service.pb.h"
+#include "source.pb.h"
+
+#include <google/protobuf/descriptor.h>
+
+#include <set>
+#include <sstream>
+#include <thread>
 
 namespace reinferio {
 namespace saltfish {
@@ -27,8 +35,8 @@ string schema_to_str(const source::Schema& schema) {
 bool schema_has_duplicates(const source::Schema& schema) {
   // TODO: Maybe use a more generic function that this..
   set<string> names;
-  for (auto feature : schema.features()) {
-    if (names.find(feature.name()) != names.end())
+  for (const auto& feature : schema.features()) {
+    if (names.count(feature.name()) == 1)
       return true;
     names.insert(feature.name());
   }
@@ -71,10 +79,10 @@ pair<bool, string> put_records_check_schema(const source::Schema& schema,
   return make_pair(true, "");
 }
 
-PutRecordsReplier::PutRecordsReplier(const vector<string>& record_ids, rpcz::reply<PutRecordsResponse> reply)
-    :record_ids_(record_ids), n_records_(record_ids.size()), n_resp_received_(0),
-     reply_(reply), already_replied_(false) {
-}
+PutRecordsReplier::PutRecordsReplier(
+    const vector<string>& record_ids, rpcz::reply<PutRecordsResponse> reply)
+    : record_ids_(record_ids), n_records_(record_ids.size()),
+      n_resp_received_(0), reply_(reply), already_replied_(false) {}
 
 PutRecordsReplier::~PutRecordsReplier() {
   // LOG(INFO) << "Destroying a PutRecordsReplier with " << n_records_;

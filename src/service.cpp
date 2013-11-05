@@ -1,7 +1,10 @@
 #include "service.hpp"
+
+#include "riak_proxy.hpp"
 #include "service_utils.hpp"
 
 #include <boost/uuid/uuid_io.hpp>         // streaming operators etc.
+#include <riak/client.hxx>
 
 #include <thread>
 #include <mutex>
@@ -19,7 +22,8 @@ namespace ph = std::placeholders;
 /*********       SourceManagerService::SourceManagerService       *********/
 
 SourceManagerService::SourceManagerService(RiakProxy* riak_proxy)
-    :riak_proxy_(riak_proxy), uuid_generator_() {
+    : riak_proxy_(riak_proxy), uuid_generator_() {
+  CHECK_NOTNULL(riak_proxy);
 }
 
 
@@ -27,9 +31,10 @@ SourceManagerService::SourceManagerService(RiakProxy* riak_proxy)
 
 void create_source_put_handler(const string& source_id,
                                rpcz::reply<CreateSourceResponse> reply,
-			       const std::error_code& error) {
+                               const std::error_code& error) {
   CreateSourceResponse response;
   if (!error) {
+    // TODO(mcobzarenco): Convert debug logs to VLOG(0).
     LOG(INFO) << "Successfully put value";
     response.set_status(CreateSourceResponse::OK);
     response.set_source_id(source_id);

@@ -3,24 +3,34 @@
 
 #include "service.pb.h"
 #include "service.rpcz.h"
-#include "riak_proxy.hpp"
 
 #include <rpcz/rpcz.hpp>
 
 #include <boost/uuid/uuid.hpp>            // uuid class
 #include <boost/uuid/uuid_generators.hpp> // generators
+#include <riak/client.hxx>
+
+#include <cstdint>
+#include <string>
+#include <memory>
+#include <system_error>
 
 
 namespace reinferio {
 namespace saltfish {
 
+class RiakProxy;
+
 typedef boost::uuids::uuid uuid_t;
 
+// TODO(mcobzarenco): Convert to const char[], make extern and move to .cpp.
 const uint32_t MAX_GENERATE_ID_COUNT{1000};
-const string SOURCES_META_BUCKET{"/ml/sources/schemas/"};
-const string SOURCES_DATA_BUCKET_ROOT{"/ml/sources/data/"};
+const std::string SOURCES_META_BUCKET{"/ml/sources/schemas/"};
+const std::string SOURCES_DATA_BUCKET_ROOT{"/ml/sources/data/"};
 
 
+// TODO(mcobzrenco): SourceManager -> SourceManagerService and
+// SourceManagerService->SourceManagerServiceImpl.
 class SourceManagerService : public SourceManager {
  public:
   SourceManagerService(RiakProxy* riak_proxy);
@@ -31,7 +41,7 @@ class SourceManagerService : public SourceManager {
   virtual void generate_id(const GenerateIdRequest& request,
                            rpcz::reply<GenerateIdResponse> reply) override;
   virtual void put_records(const PutRecordsRequest& request,
-			   rpcz::reply<PutRecordsResponse> reply) override;
+                           rpcz::reply<PutRecordsResponse> reply) override;
 
 
  private:
@@ -41,7 +51,7 @@ class SourceManagerService : public SourceManager {
                                  std::shared_ptr<riak::object> object,
                                  riak::value_updater& update_value);
 
-  RiakProxy* riak_proxy_;
+  RiakProxy* const riak_proxy_;
   boost::uuids::random_generator uuid_generator_;
 };
 
