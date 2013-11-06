@@ -84,7 +84,7 @@ class SaltfishTester(object):
     def __init__(self, connect_str, riak_host, riak_port):
         self._app = rpcz.Application()
         self._channel = self._app.create_rpc_channel(connect_str)
-        self._service = service_rpcz.SourceManager_Stub(self._channel)
+        self._service = service_rpcz.SourceManagerService_Stub(self._channel)
         self._riakc = riak.RiakClient(protocol='pbc', host=riak_host, pb_port=riak_port)
 
     def run_tests(self):
@@ -135,7 +135,7 @@ class SaltfishTester(object):
             features[1]['type'] = source_pb2.Feature.CATEGORICAL
             req2 = make_create_source_req(source_id, features)
             response = self._service.create_source(req2, deadline_ms=DEFAULT_DEADLINE)
-            assert response.status == service_pb2.CreateSourceResponse.ERROR
+            assert response.status == service_pb2.CreateSourceResponse.SOURCE_ID_ALREADY_EXISTS
             log_info('Got error message: "%s"' % response.msg)
             log_success(TEST_PASSED)
         except rpcz.rpc.RpcDeadlineExceeded:
@@ -162,7 +162,7 @@ class SaltfishTester(object):
         log_info("Creating source with duplicate feature name in schema. Error expected")
         try:
             response = self._service.create_source(request, deadline_ms=DEFAULT_DEADLINE)
-            assert response.status == service_pb2.CreateSourceResponse.ERROR
+            assert response.status == service_pb2.CreateSourceResponse.DUPLICATE_FEATURE_NAME
             log_info('Got error message: "%s"' % response.msg)
             log_success(TEST_PASSED)
         except rpcz.rpc.RpcDeadlineExceeded:
@@ -218,7 +218,7 @@ class SaltfishTester(object):
         req.count = 1000000
         try:
             response = self._service.generate_id(req, deadline_ms=DEFAULT_DEADLINE)
-            assert response.status == service_pb2.GenerateIdResponse.ERROR
+            assert response.status == service_pb2.GenerateIdResponse.COUNT_TOO_LARGE
             assert len(response.ids) == 0
             log_info('Got error message: "%s"' % response.msg)
             log_success(TEST_PASSED)
@@ -242,6 +242,8 @@ class SaltfishTester(object):
             log_info("reals=%s; cats=%s" % (str(request.records[0].reals), str(request.records[0].cats)))
             response = self._service.put_records(request, deadline_ms=DEFAULT_DEADLINE)
             assert response.status == service_pb2.PutRecordsResponse.OK
+            log_info(response.record_ids)
+            log_info(SaltfishTester.records)
             assert len(response.record_ids) == len(SaltfishTester.records)
             bucket = SOURCES_DATA_BUCKET_ROOT + source_id + '/'
             for record_id in response.record_ids:
@@ -260,7 +262,7 @@ class SaltfishTester(object):
                      (len(SaltfishTester.records), source_id))
             request = make_put_records_req(source_id, records=SaltfishTester.records)
             response = self._service.put_records(request, deadline_ms=DEFAULT_DEADLINE)
-            assert response.status == service_pb2.PutRecordsResponse.ERROR
+            assert response.status == service_pb2.PutRecordsResponse.INVALID_SOURCE_ID
             assert len(response.record_ids) == 0
             log_info('Got error message: "%s"' % response.msg)
         except rpcz.rpc.RpcDeadlineExceeded:

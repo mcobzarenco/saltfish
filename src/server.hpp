@@ -22,11 +22,11 @@ class SaltfishServer {
                  uint16_t riak_port);
   SaltfishServer(const SaltfishServer&) = delete;
   SaltfishServer& operator=(const SaltfishServer&) = delete;
-  virtual ~SaltfishServer();
+  virtual ~SaltfishServer() noexcept;
 
   void run() noexcept;
   void terminate() noexcept;
-  
+
   const std::string& bind_str() const { return bind_str_; }
   const std::string& riak_host() const { return riak_host_; }
   uint16_t riak_port() const { return riak_port_; }

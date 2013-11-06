@@ -12,9 +12,9 @@ using namespace reinferio;
 
 
 namespace {
-const char DEFAULT_BIND_STR[] = "tcp://127.0.0.1:5555";
-const char DEFAULT_RIAK_HOST[] = "127.0.0.1";
-const uint16_t DEFAULT_RIAK_PORT = 10017;
+const char DEFAULT_BIND_STR[]{"tcp://127.0.0.1:5555"};
+const char DEFAULT_RIAK_HOST[]{"127.0.0.1"};
+const uint16_t DEFAULT_RIAK_PORT{10017};
 }
 
 
@@ -29,7 +29,8 @@ int main(int argc, char **argv) {
   auto riak_port = uint16_t{DEFAULT_RIAK_PORT};
 
   auto description = po::options_description{
-    "Saltfish server (built on " + build_time +") manages schemas and data for soruces.\n\nAllowed options:"
+    "Saltfish server (built on " + build_time +
+    ") manages schemas and data for soruces.\n\nAllowed options:"
   };
   description.add_options()
       ("help,h", "prints this help message")

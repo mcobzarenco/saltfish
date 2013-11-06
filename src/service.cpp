@@ -1,13 +1,15 @@
+#define BOOST_BIND_NO_PLACEHOLDERS
+
 #include "service.hpp"
 
 #include "riak_proxy.hpp"
 #include "service_utils.hpp"
 
-#include <boost/uuid/uuid_io.hpp>         // streaming operators etc.
 #include <riak/client.hxx>
+#include <glog/logging.h>
+#include <boost/uuid/uuid_io.hpp>         // streaming operators etc.
 
 #include <thread>
-#include <mutex>
 #include <sstream>
 #include <set>
 
@@ -15,13 +17,17 @@
 namespace reinferio {
 namespace saltfish {
 
+
+const uint32_t MAX_GENERATE_ID_COUNT{1000};
+const char SOURCES_METADATA_BUCKET[]{"/ml/sources/schemas/"};
+const char SOURCES_DATA_BUCKET_ROOT[]{"/ml/sources/data/"};
+
+
 using namespace std;
-namespace ph = std::placeholders;
+using namespace std::placeholders;
 
 
-/*********       SourceManagerService::SourceManagerService       *********/
-
-SourceManagerService::SourceManagerService(RiakProxy* riak_proxy)
+SourceManagerServiceImpl::SourceManagerServiceImpl(RiakProxy* riak_proxy)
     : riak_proxy_(riak_proxy), uuid_generator_() {
   CHECK_NOTNULL(riak_proxy);
 }
@@ -79,7 +85,7 @@ void create_source_get_handler(const string& source_id,
       auto new_value = std::make_shared<riak::object>();
       request.schema().SerializeToString(new_value->mutable_value());
       riak::put_response_handler handler =
-          std::bind(&create_source_put_handler, source_id, reply, ph::_1);
+          std::bind(&create_source_put_handler, source_id, reply, _1);
       update_value(new_value, handler);
     }
   } else {
@@ -94,7 +100,7 @@ void create_source_get_handler(const string& source_id,
 
 }  // namespace
 
-void SourceManagerService::create_source(const CreateSourceRequest& request,
+void SourceManagerServiceImpl::create_source(const CreateSourceRequest& request,
                                          rpcz::reply<CreateSourceResponse> reply) {
   if (schema_has_duplicates(request.schema())) {
     CreateSourceResponse response;
@@ -108,19 +114,19 @@ void SourceManagerService::create_source(const CreateSourceRequest& request,
   string source_id;
   if (request.source_id().empty()) {
     LOG(INFO) << "Request source_id not set, generating one" ;
-    source_id = boost::uuids::to_string(uuid_generator_());
+    source_id = boost::uuids::to_string(generate_uuid());
   } else {
     source_id = request.source_id();
   }
   auto handler = bind(&create_source_get_handler, source_id, request, reply,
-                      ph::_1,  ph::_2,  ph::_3);
+                      _1,  _2,  _3);
   LOG(INFO) << "creating source (id=" << source_id
             << ", schema=" << schema_to_str(request.schema()) << ")";
   riak_proxy_->get_object(SOURCES_METADATA_BUCKET, source_id, handler);
 }
 
 
-/***********      SourceManagerService::delete_source     ***********/
+/***********      SourceManagerServiceImpl::delete_source     ***********/
 
 namespace {
 
@@ -141,18 +147,23 @@ void delete_source_handler(const string& source_id,
 
 }  // namespace
 
-void SourceManagerService::delete_source(const DeleteSourceRequest& request,
+void SourceManagerServiceImpl::delete_source(const DeleteSourceRequest& request,
                                          rpcz::reply<DeleteSourceResponse> reply) {
   // TODO: Make sure the actual data is deleted by some job later
   LOG(INFO) << "delete_source(source_id=" << request.source_id() << ")";
-  auto handler = bind(&delete_source_handler, request.source_id(), reply, ph::_1);
+  auto handler = bind(&delete_source_handler, request.source_id(), reply, _1);
   riak_proxy_->delete_object(SOURCES_METADATA_BUCKET, request.source_id(), handler);
 }
 
 
-/***********      SourceManagerService::generate_id     ***********/
+/***********       SourceManagerService::generate_id       ***********/
 
-void SourceManagerService::generate_id(const GenerateIdRequest& request,
+uuid_t SourceManagerServiceImpl::generate_uuid() {
+  lock_guard<mutex> generate_uuid_lock(uuid_generator_mutex_);
+  return uuid_generator_();
+}
+
+void SourceManagerServiceImpl::generate_id(const GenerateIdRequest& request,
                                        rpcz::reply<GenerateIdResponse> reply) {
   LOG(INFO) << "generate_id(count=" << request.count() << ")";
 
@@ -160,7 +171,7 @@ void SourceManagerService::generate_id(const GenerateIdRequest& request,
   if(request.count() < MAX_GENERATE_ID_COUNT) {
     response.set_status(GenerateIdResponse::OK);
     for(uint32_t i = 0; i < request.count(); ++i) {
-      response.add_ids(boost::uuids::to_string(uuid_generator_()));
+      response.add_ids(boost::uuids::to_string(generate_uuid()));
     }
   } else {
     response.set_status(GenerateIdResponse::COUNT_TOO_LARGE);
@@ -208,7 +219,7 @@ void put_records_get_handler(const source::Record& record,
 
 }  // namespace
 
-void SourceManagerService::put_records_check_handler(const PutRecordsRequest& request,
+void SourceManagerServiceImpl::put_records_check_handler(const PutRecordsRequest& request,
                                                      rpcz::reply<PutRecordsResponse> reply,
                                                      const std::error_code& error,
                                                      std::shared_ptr<riak::object> object,
@@ -233,7 +244,7 @@ void SourceManagerService::put_records_check_handler(const PutRecordsRequest& re
       if (n_record_ids == 0) {
         for (uint32_t i = 0; i < n_records; ++i)
           record_ids.emplace_back(
-              move(boost::uuids::to_string(uuid_generator_())));
+              move(boost::uuids::to_string(generate_uuid())));
       } else {
         CHECK_EQ(n_record_ids, n_records)
             << "Expected the same number of records and record_ids";
@@ -246,7 +257,7 @@ void SourceManagerService::put_records_check_handler(const PutRecordsRequest& re
         const string& record_id = record_ids[i];
         const source::Record& record = request.records(i);
         auto handler = bind(&put_records_get_handler, record, replier,
-                            ph::_1,  ph::_2,  ph::_3);
+                            _1,  _2,  _3);
         ostringstream bucket;
         bucket << SOURCES_DATA_BUCKET_ROOT << request.source_id() << "/";
         LOG(INFO) << "Queueing put_record @ (b=" << bucket.str()
@@ -314,7 +325,7 @@ void put_handler(const PutRecordsRequest& request,
 }
 
 
-void SourceManagerService::put_records(const PutRecordsRequest& request,
+void SourceManagerServiceImpl::put_records(const PutRecordsRequest& request,
                                        rpcz::reply<PutRecordsResponse> reply) {
   uint32_t n_record_ids = request.record_ids_size();
   uint32_t n_records = request.records_size();
@@ -344,8 +355,8 @@ void SourceManagerService::put_records(const PutRecordsRequest& request,
     return;
   }
 
-  auto handler = bind(&SourceManagerService::put_records_check_handler,
-                      this, request, reply, ph::_1, ph::_2, ph::_3);
+  auto handler = bind(&SourceManagerServiceImpl::put_records_check_handler,
+                      this, request, reply, _1, _2, _3);
   riak_proxy_->get_object(SOURCES_METADATA_BUCKET, request.source_id(), handler);
 }
 

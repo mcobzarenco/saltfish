@@ -14,7 +14,7 @@ SaltfishServer::SaltfishServer(const string& bind_str,
   riak_proxy_.reset(new RiakProxy(riak_host, riak_port));
 }
 
-SaltfishServer::~SaltfishServer() {
+SaltfishServer::~SaltfishServer() noexcept {
   if (signal_thread_ != nullptr) {
     signal_ios_.stop();
     signal_thread_->join();
@@ -23,7 +23,7 @@ SaltfishServer::~SaltfishServer() {
 
 void SaltfishServer::run() noexcept {
   try {
-    saltfish::SourceManagerService sms(riak_proxy_.get());
+    saltfish::SourceManagerServiceImpl sms(riak_proxy_.get());
     server_.register_service(&sms);
     server_.bind(bind_str_);
     LOG(INFO) << "Serving requests at " << bind_str_

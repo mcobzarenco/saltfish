@@ -14,6 +14,7 @@
 #include <string>
 #include <memory>
 #include <system_error>
+#include <mutex>
 
 
 namespace reinferio {
@@ -21,22 +22,18 @@ namespace saltfish {
 
 class RiakProxy;
 
+extern const uint32_t MAX_GENERATE_ID_COUNT;
+extern const char SOURCES_METADATA_BUCKET[];
+extern const char SOURCES_DATA_BUCKET_ROOT[];
+
 typedef boost::uuids::uuid uuid_t;
 
-// TODO(mcobzarenco): Convert to const char[], make extern and move to .cpp.
-const uint32_t MAX_GENERATE_ID_COUNT{1000};
-const std::string SOURCES_METADATA_BUCKET{"/ml/sources/schemas/"};
-const std::string SOURCES_DATA_BUCKET_ROOT{"/ml/sources/data/"};
 
-
-// TODO(mcobzarenco): SourceManager -> SourceManagerService and
-// SourceManagerService->SourceManagerServiceImpl.
-// TODO(mcobzarenco): SourceManagerService is not thread-safe (!).
 // TODO(mcobzarenco): Error reporting member function (reply<>, error_code).
 // With array from codes -> string.
-class SourceManagerService : public SourceManager {
+class SourceManagerServiceImpl : public SourceManagerService {
  public:
-  SourceManagerService(RiakProxy* riak_proxy);
+  SourceManagerServiceImpl(RiakProxy* riak_proxy);
   virtual void create_source(const CreateSourceRequest& request,
                              rpcz::reply<CreateSourceResponse> reply) override;
   virtual void delete_source(const DeleteSourceRequest& request,
@@ -48,14 +45,16 @@ class SourceManagerService : public SourceManager {
 
 
  private:
+  uuid_t generate_uuid();
   void put_records_check_handler(const PutRecordsRequest& request,
                                  rpcz::reply<PutRecordsResponse> reply,
                                  const std::error_code& error,
                                  std::shared_ptr<riak::object> object,
                                  riak::value_updater& update_value);
 
-  RiakProxy* const riak_proxy_;
+  RiakProxy* riak_proxy_;
   boost::uuids::random_generator uuid_generator_;
+  std::mutex uuid_generator_mutex_;
 };
 
 

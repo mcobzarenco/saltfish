@@ -1,5 +1,7 @@
 #include "riak_proxy.hpp"
 
+#include <glog/logging.h>
+
 
 namespace reinferio {
 namespace saltfish {
@@ -36,8 +38,8 @@ void RiakProxy::get_object(const string& bucket, const string& key,
 
 void RiakProxy::delete_object(const string& bucket, const string& key,
 			      riak::delete_response_handler handler) {
-    LOG(INFO) << "Queueing Riak delete_object request";
-    client_->delete_object(bucket, key, handler);
+  LOG(INFO) << "Queueing Riak delete_object request";
+  client_->delete_object(bucket, key, handler);
 }
 
 RiakProxy::~RiakProxy() {

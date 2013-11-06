@@ -99,7 +99,7 @@ message PutRecordsResponse {
 
 /*****************           SourceManager          *****************/
 
-service SourceManager  {
+service SourceManagerService  {
     rpc create_source(CreateSourceRequest) returns (CreateSourceResponse);
     rpc delete_source(DeleteSourceRequest) returns (DeleteSourceResponse);
     rpc generate_id(GenerateIdRequest) returns (GenerateIdResponse);
