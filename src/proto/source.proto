@@ -2,24 +2,24 @@ package reinferio.source;
 
 
 message Feature {
-    enum FeatureType {
-	INVALID = 0;
-	REAL = 1;
-	CATEGORICAL = 2;
-	TEXT = 3;
-    }
+  enum FeatureType {
+    INVALID = 0;
+    REAL = 1;
+    CATEGORICAL = 2;
+    TEXT = 3;
+  }
 
-    required string name = 1;
-    required FeatureType feature_type = 2;
+  required string name = 1;
+  required FeatureType feature_type = 2;
 }
 
 
 message Schema {
-    repeated Feature features = 1;
+  repeated Feature features = 1;
 }
 
 
 message Record {
-    repeated double reals = 1;
-    repeated string cats = 2;
+  repeated double reals = 1;
+  repeated string cats = 2;
 }
