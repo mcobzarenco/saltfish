@@ -104,3 +104,8 @@ target_link_libraries(
     ${PROTOBUF_LIBRARY}
     ${Boost_LIBRARIES}
 )
+
+
+# Install targets
+# ==============================================================================
+install(TARGETS saltfish DESTINATION bin)
