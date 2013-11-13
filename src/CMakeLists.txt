@@ -92,18 +92,18 @@ target_link_libraries(
 add_dependencies(${PROJECT_NAME} SOURCE_PB_PY SERVICE_PB_PY SERVICE_RPCZ_PY)
 
 
-add_executable(
-  main2
-    main2.cpp
-)
+# add_executable(
+#   main2
+#     main2.cpp
+# )
 
-target_link_libraries(
-  main2
-    riak-cpp
-    pthread
-    ${PROTOBUF_LIBRARY}
-    ${Boost_LIBRARIES}
-)
+# target_link_libraries(
+#   main2
+#     riak-cpp
+#     pthread
+#     ${PROTOBUF_LIBRARY}
+#     ${Boost_LIBRARIES}
+# )
 
 
 # Install targets
