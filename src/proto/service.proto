@@ -6,8 +6,7 @@ import "source.proto";
 /*****************      SourceManager::create_source      *****************/
 
 message CreateSourceRequest {
-  optional string source_id = 1;
-  optional reinferio.source.Schema schema = 2;
+  optional reinferio.source.Source source = 1;
 }
 
 message CreateSourceResponse {

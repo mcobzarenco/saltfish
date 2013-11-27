@@ -9,17 +9,23 @@ message Feature {
     TEXT = 3;
   }
 
-  required string name = 1;
-  required FeatureType feature_type = 2;
+  optional string name = 1;
+  optional FeatureType feature_type = 2;
 }
-
 
 message Schema {
   repeated Feature features = 1;
 }
 
-
 message Record {
   repeated double reals = 1;
   repeated string cats = 2;
+}
+
+message Source {
+  optional bytes source_id = 1;
+  optional int32 user_id = 2;
+  optional Schema schema = 3;
+  optional string name = 4;
+  optional uint32 created = 5;
 }
