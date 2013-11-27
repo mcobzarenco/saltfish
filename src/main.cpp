@@ -1,3 +1,4 @@
+#include "saltfish_config.hpp"
 #include "server.hpp"
 
 #include <boost/program_options.hpp>
@@ -12,9 +13,9 @@ using namespace reinferio;
 
 
 namespace {
-const char DEFAULT_BIND_STR[]{"tcp://127.0.0.1:5555"};
-const char DEFAULT_RIAK_HOST[]{"127.0.0.1"};
-const uint16_t DEFAULT_RIAK_PORT{10017};
+const char DEFAULT_BIND_STR[] {"tcp://127.0.0.1:5555"};
+const char DEFAULT_RIAK_HOST[] {"127.0.0.1"};
+const uint16_t DEFAULT_RIAK_PORT {10017};
 }
 
 
@@ -27,6 +28,7 @@ int main(int argc, char **argv) {
   auto bind_str = string{};
   auto riak_host = string{DEFAULT_RIAK_HOST};
   auto riak_port = uint16_t{DEFAULT_RIAK_PORT};
+  string conf_file;
 
   auto description = po::options_description{
     "Saltfish server (built on " + build_time +
@@ -45,7 +47,11 @@ int main(int argc, char **argv) {
       ("riak-port",
         po::value<uint16_t>(&riak_port)
           ->default_value(DEFAULT_RIAK_PORT)->value_name("PORT"),
-       "Riak node port (pbc protocol)");
+       "Riak node port (pbc protocol)")
+      ("conf",
+       po::value<string>(&conf_file)
+       ->default_value("")->value_name("FILE"),
+       "Config file");
 
   auto variables = po::variables_map{};
 
@@ -56,6 +62,12 @@ int main(int argc, char **argv) {
       cerr << description << endl;
       return 0;
     }
+
+    saltfish::SaltfishConf conf;
+    if (!conf_file.empty()) {
+      conf = saltfish::parse_config_file(conf_file);
+    }
+
     saltfish::SaltfishServer server(bind_str, riak_host, riak_port);
     server.run();
   } catch (const boost::program_options::unknown_option& e) {
