@@ -6,6 +6,10 @@
 include(rpcz_functions)
 find_package(ProtobufPlugin REQUIRED)
 
+protobuf_generate_cpp(CONFIG_PB_SRCS CONFIG_PB_HDRS proto/config.proto)
+set(CONFIG_PB ${CONFIG_PB_SRCS} ${CONFIG_PB_HDRS})
+
+
 protobuf_generate_cpp(SOURCE_PB_SRCS SOURCE_PB_HDRS proto/source.proto)
 set(SOURCE_PB ${SOURCE_PB_SRCS} ${SOURCE_PB_HDRS})
 
@@ -47,6 +51,8 @@ add_library(
     service_utils.hpp
     service_utils.cpp
     riak_proxy.hpp
+    sql_pool.hpp
+    sql_pool.cpp
 )
 target_link_libraries(
   saltfish_service
@@ -65,6 +71,7 @@ add_library(
     server.cpp
     service.hpp
     riak_proxy.hpp
+    ${CONFIG_PB}
 )
 target_link_libraries(
   saltfish_server
@@ -89,12 +96,11 @@ target_link_libraries(
     ${PROTOBUF_LIBRARY}
 )
 
-add_dependencies(${PROJECT_NAME} SOURCE_PB_PY SERVICE_PB_PY SERVICE_RPCZ_PY)
-
 
 # add_executable(
 #   main2
 #     main2.cpp
+#     ${CONFIG_PB}
 # )
 
 # target_link_libraries(
