@@ -11,24 +11,16 @@
 using namespace std;
 using namespace reinferio;
 
-
-namespace {
-const char DEFAULT_BIND_STR[] {"tcp://127.0.0.1:5555"};
-const char DEFAULT_RIAK_HOST[] {"127.0.0.1"};
-const uint16_t DEFAULT_RIAK_PORT {10017};
-}
-
-
 int main(int argc, char **argv) {
   namespace po = boost::program_options;
   google::InitGoogleLogging(argv[0]);
   google::LogToStderr();
 
   auto build_time = string{__TIMESTAMP__};
-  auto bind_str = string{};
-  auto riak_host = string{DEFAULT_RIAK_HOST};
-  auto riak_port = uint16_t{DEFAULT_RIAK_PORT};
   string conf_file;
+  string bind_str;
+  string riak_host;
+  uint16_t riak_port;
 
   auto description = po::options_description{
     "Saltfish server (built on " + build_time +
@@ -36,22 +28,18 @@ int main(int argc, char **argv) {
   };
   description.add_options()
       ("help,h", "prints this help message")
+      ("conf",
+       po::value<string>(&conf_file)->value_name("FILE"),
+       "Config file. Options in cmd line overwrite the values from the file.")
       ("bind",
-       po::value<string>(&bind_str)
-         ->default_value(DEFAULT_BIND_STR)->value_name("STR"),
+       po::value<string>(&bind_str)->value_name("STR"),
        "ZeroMQ bind string")
       ("riak-host",
-       po::value<string>(&riak_host)
-         ->default_value(DEFAULT_RIAK_HOST)->value_name("HOST"),
+       po::value<string>(&riak_host)->value_name("HOST"),
        "Riak node hostname")
       ("riak-port",
-        po::value<uint16_t>(&riak_port)
-          ->default_value(DEFAULT_RIAK_PORT)->value_name("PORT"),
-       "Riak node port (pbc protocol)")
-      ("conf",
-       po::value<string>(&conf_file)
-       ->default_value("")->value_name("FILE"),
-       "Config file");
+       po::value<uint16_t>(&riak_port)->value_name("PORT"),
+       "Riak node port (pbc protocol)");
 
   auto variables = po::variables_map{};
 
@@ -67,8 +55,17 @@ int main(int argc, char **argv) {
     if (!conf_file.empty()) {
       conf = saltfish::parse_config_file(conf_file);
     }
+    if (!bind_str.empty()) {
+      conf.set_bind_str(bind_str);
+    }
+    if (!riak_host.empty()) {
+      conf.mutable_riak()->set_host(riak_host);
+    }
+    if (riak_port != 0)  {
+      conf.mutable_riak()->set_port(riak_port);
+    }
 
-    saltfish::SaltfishServer server(bind_str, riak_host, riak_port);
+    saltfish::SaltfishServer server(conf);
     server.run();
   } catch (const boost::program_options::unknown_option& e) {
     LOG(ERROR) << e.what();

@@ -1,19 +1,19 @@
 package reinferio.saltfish;
 
 message RiakConf {
-  optional string host = 1;
-  optional uint32 port = 2;
+  optional string host = 1 [default = "127.0.0.1"];
+  optional uint32 port = 2 [default = 10017];
 }
 
 message MariaDBConf {
-  optional string host = 1;
-  optional string db = 2;
-  optional string user = 3;
-  optional string password = 4;
+  optional string host = 1      [default = "localhost"];
+  optional string db = 2        [default = "mlaas"];
+  optional string user = 3      [default = "root"];
+  optional string password = 4  [default = ""];
 }
 
 message SaltfishConf {
-  optional string bind_str = 1;
+  optional string bind_str = 1 [default = "tcp://127.0.0.1:5555"];
   optional RiakConf riak = 2;
   optional MariaDBConf maria_db = 3;
 }
