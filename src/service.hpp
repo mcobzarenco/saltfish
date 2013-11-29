@@ -26,13 +26,13 @@ namespace sql {
 class ConnectionPool;
 }
 
-
 using uuid_t = boost::uuids::uuid;
 
 class SourceManagerServiceImpl : public SourceManagerService {
  public:
   SourceManagerServiceImpl(
       RiakProxy& riak_proxy,
+      sql::ConnectionPool& sql_pool,
       uint32_t max_generate_id_count,
       const std::string& sources_data_bucket_root,
       const std::string& sources_metadata_bucket = "/ml/sources/schemas/");
@@ -63,7 +63,7 @@ class SourceManagerServiceImpl : public SourceManagerService {
                                  riak::value_updater& update_value);
 
   RiakProxy& riak_proxy_;
-  // sql::ConnectionPool sql_pool_;
+  sql::ConnectionPool sql_pool_;
 
   boost::uuids::random_generator uuid_generator_;
   std::mutex uuid_generator_mutex_;

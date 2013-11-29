@@ -3,13 +3,12 @@
 #include "service.hpp"
 
 #include "riak_proxy.hpp"
+#include "sql_pool.hpp"
 #include "service_utils.hpp"
 
 #include <riak/client.hxx>
 #include <glog/logging.h>
 #include <boost/uuid/uuid_io.hpp>
-#include <boost/assign/list_of.hpp>
-#include <boost/utility/string_ref.hpp>
 
 #include <thread>
 #include <sstream>
@@ -23,10 +22,9 @@ namespace saltfish {
 
 using namespace std;
 using namespace std::placeholders;
-using boost::assign::list_of;
-using boost::string_ref;
 
-//  Defaults and error messages:
+
+//  Error messages:
 
 constexpr char UNKNOWN_ERROR_MESSAGE[] =
     "Unknown error status: must likely using protobufs with mismatched versions.";
@@ -135,10 +133,13 @@ inline std::function<int64_t()> init_uniform_distribution() noexcept {
 
 SourceManagerServiceImpl::SourceManagerServiceImpl(
     RiakProxy& riak_proxy,
+    sql::ConnectionPool& sql_pool,
     uint32_t max_generate_id_count,
     const string& sources_data_bucket_root,
     const string& sources_metadata_bucket)
-    : riak_proxy_(riak_proxy), uuid_generator_(),
+    : riak_proxy_(riak_proxy),
+      sql_pool_(sql_pool),
+      uuid_generator_(),
       uniform_distribution_(init_uniform_distribution()),
       max_generate_id_count_(max_generate_id_count),
       sources_metadata_bucket_(sources_metadata_bucket),
