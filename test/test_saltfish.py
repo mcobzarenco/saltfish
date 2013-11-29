@@ -41,9 +41,9 @@ def make_create_source_req(source_id=None, features=None):
     features = features or []
     request = service_pb2.CreateSourceRequest()
     if source_id:
-        request.source_id = source_id
+        request.source.source_id = str(source_id)
     for f in features:
-        new_feat = request.schema.features.add()
+        new_feat = request.source.schema.features.add()
         new_feat.name = f['name']
         new_feat.feature_type = f['type']
     return request
@@ -56,7 +56,7 @@ def filter_by_type(seq, typ):
 def make_put_records_req(source_id, record_ids=None, records=None):
     records = records or []
     request = service_pb2.PutRecordsRequest()
-    request.source_id = source_id
+    request.source_id = str(source_id)
     if record_ids:
         request.record_ids.extend(record_ids)
     for record in records:
@@ -99,9 +99,10 @@ class SaltfishTester(object):
 
     def do_test_create_source(self, source_id=None):
         if source_id:
-            log_info('Creating a new source without setting the id..')
-        else:
             log_info('Creating a new source with a given id (id=%s)..' % source_id)
+        else:
+            log_info('Creating a new source without setting the id..')
+
 
         try:
             req = make_create_source_req(source_id, SaltfishTester.features)
@@ -114,8 +115,9 @@ class SaltfishTester(object):
 
             remote_data = self._riakc.bucket(SOURCES_META_BUCKET).get(source_id)
             assert remote_data.encoded_data is not None
-            remote_schema = source_pb2.Schema()
-            remote_schema.ParseFromString(remote_data.encoded_data)
+            remote_source = source_pb2.Source()
+            remote_source.ParseFromString(remote_data.encoded_data)
+            remote_schema = remote_source.schema
             remote_features = map(lambda x: {
                 'name': x.name,
                 'type': x.feature_type

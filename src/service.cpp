@@ -28,9 +28,6 @@ using boost::string_ref;
 
 //  Defaults and error messages:
 
-constexpr char SourceManagerServiceImpl::Default::SOURCES_METADATA_BUCKET[];
-constexpr char SourceManagerServiceImpl::Default::SOURCES_DATA_BUCKET_ROOT[];
-
 constexpr char UNKNOWN_ERROR_MESSAGE[] =
     "Unknown error status: must likely using protobufs with mismatched versions.";
 constexpr char NETWORK_ERROR_MESSAGE[] =
@@ -137,16 +134,15 @@ inline std::function<int64_t()> init_uniform_distribution() noexcept {
 
 
 SourceManagerServiceImpl::SourceManagerServiceImpl(
-    RiakProxy* riak_proxy,
+    RiakProxy& riak_proxy,
     uint32_t max_generate_id_count,
-    const string& sources_metadata_bucket,
-    const string& sources_data_bucket_root)
+    const string& sources_data_bucket_root,
+    const string& sources_metadata_bucket)
     : riak_proxy_(riak_proxy), uuid_generator_(),
       uniform_distribution_(init_uniform_distribution()),
       max_generate_id_count_(max_generate_id_count),
       sources_metadata_bucket_(sources_metadata_bucket),
       sources_data_bucket_root_(sources_data_bucket_root) {
-  CHECK_NOTNULL(riak_proxy);
 }
 
 /***********                      create_source                     ***********/
@@ -162,7 +158,7 @@ void SourceManagerServiceImpl::create_source_handler(
     if (object) {  // There's already a source with the same id
       // TODO(cristicbz): Extract to functions that check equality & equivalence
       // of protobufs.
-      if (request.schema().SerializeAsString() == object->value()) {
+      if (request.source().SerializeAsString() == object->value()) {
         // Trying to create a source that already exists with identical schema
         // Nothing to do - such that the call is idempotent
         CreateSourceResponse response;
@@ -176,11 +172,10 @@ void SourceManagerServiceImpl::create_source_handler(
       }
     } else {
       auto new_value = std::make_shared<riak::object>();
-      request.schema().SerializeToString(new_value->mutable_value());
+      request.source().SerializeToString(new_value->mutable_value());
       riak::put_response_handler handler =
         [source_id, reply](const std::error_code& error) mutable {
         if (!error) {
-          // TODO(mcobzarenco): Convert debug logs to VLOG(0).
           VLOG(0) << "Successfully created source (id=" << source_id << ")";
           CreateSourceResponse response;
           response.set_status(CreateSourceResponse::OK);
@@ -206,22 +201,24 @@ void SourceManagerServiceImpl::create_source_handler(
 void SourceManagerServiceImpl::create_source(
     const CreateSourceRequest& request,
     rpcz::reply<CreateSourceResponse> reply) {
-  if (schema_has_duplicates(request.schema())) {
+  const auto& source = request.source();
+  if (schema_has_duplicates(source.schema())) {
     reply_with_status(CreateSourceResponse::DUPLICATE_FEATURE_NAME, reply);
     return;
   }
+
   string source_id;
-  if (request.source_id().empty()) {
+  if (source.source_id().empty()) {
     LOG(INFO) << "Request source_id not set, generating one" ;
     source_id = boost::uuids::to_string(generate_uuid());
   } else {
-    source_id = request.source_id();
+    source_id = source.source_id();
   }
   auto handler = bind(&SourceManagerServiceImpl::create_source_handler,
                       this, source_id, request, reply, _1,  _2,  _3);
   LOG(INFO) << "creating source (id=" << source_id
-            << ", schema=" << schema_to_str(request.schema()) << ")";
-  riak_proxy_->get_object(sources_metadata_bucket_, source_id, handler);
+            << ", schema=" << schema_to_str(source.schema()) << ")";
+  riak_proxy_.get_object(sources_metadata_bucket_, source_id, handler);
 }
 
 /***********                      delete_source                     ***********/
@@ -245,7 +242,7 @@ void SourceManagerServiceImpl::delete_source(
     return;
   };
 
-  riak_proxy_->delete_object(sources_metadata_bucket_,
+  riak_proxy_.delete_object(sources_metadata_bucket_,
                              request.source_id(),
                              handler);
 }
@@ -333,8 +330,16 @@ void SourceManagerServiceImpl::put_records_check_handler(
     riak::value_updater& update_value) {
   if (!error) {
     if (object) {
-      source::Schema schema;
-      schema.ParseFromString(object->value());
+      source::Source source;
+      if (!source.ParseFromString(object->value())) {
+        LOG(ERROR) << "Could not parse source metadata for request: "
+                   << request.DebugString();
+        reply_with_status(PutRecordsResponse::INVALID_SCHEMA, reply,
+                          "The source does not a valid schema");
+        return;
+      }
+      const source::Schema& schema = source.schema();
+
       pair<bool, string> result = put_records_check_schema(schema, request);
       if (!result.first) {
         VLOG(0) << "Invalid record in put_records request: " << result.second;
@@ -367,7 +372,7 @@ void SourceManagerServiceImpl::put_records_check_handler(
         bucket << sources_data_bucket_root_ << request.source_id() << "/";
         VLOG(0) << "Queueing put_record @ (b=" << bucket.str()
                 << " k=" << record_id << ")";
-        riak_proxy_->get_object(bucket.str(), record_id, handler);
+        riak_proxy_.get_object(bucket.str(), record_id, handler);
       }
     } else {
       VLOG(0) << "Received put_records request for non-existent source; id="
@@ -451,7 +456,7 @@ void SourceManagerServiceImpl::put_records(
 
   auto handler = bind(&SourceManagerServiceImpl::put_records_check_handler,
                       this, request, reply, _1, _2, _3);
-  riak_proxy_->get_object(sources_metadata_bucket_, request.source_id(), handler);
+  riak_proxy_.get_object(sources_metadata_bucket_, request.source_id(), handler);
 }
 
 

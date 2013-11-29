@@ -40,7 +40,7 @@ class SaltfishServer {
 
   rpcz::application application_;
   rpcz::server server_;
-  std::unique_ptr<RiakProxy> riak_proxy_;
+  RiakProxy riak_proxy_;
 };
 
 

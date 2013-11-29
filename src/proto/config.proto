@@ -14,6 +14,10 @@ message MariaDBConf {
 
 message SaltfishConf {
   optional string bind_str = 1 [default = "tcp://127.0.0.1:5555"];
-  optional RiakConf riak = 2;
-  optional MariaDBConf maria_db = 3;
+
+  optional uint32 max_generate_id_count = 2 [default = 1000];
+  optional string sources_data_bucket_root = 3 [default = "/ml/sources/data/"];
+
+  optional RiakConf riak = 4;
+  optional MariaDBConf maria_db = 5;
 }

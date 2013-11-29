@@ -6,9 +6,9 @@ namespace saltfish {
 using namespace std;
 
 SaltfishServer::SaltfishServer(const SaltfishConf& config)
-  : config_(config), signal_ios_(), signal_thread_(),
-    application_(), server_(application_) {
-  riak_proxy_.reset(new RiakProxy(config.riak().host(), config.riak().port()));
+    : config_(config), signal_ios_(), signal_thread_(),
+      application_(), server_(application_),
+      riak_proxy_(config.riak().host(), config.riak().port()) {
 }
 
 SaltfishServer::~SaltfishServer() noexcept {
@@ -20,7 +20,9 @@ SaltfishServer::~SaltfishServer() noexcept {
 
 void SaltfishServer::run() noexcept {
   try {
-    saltfish::SourceManagerServiceImpl sms(riak_proxy_.get());
+    saltfish::SourceManagerServiceImpl sms(riak_proxy_,
+                                           config_.max_generate_id_count(),
+                                           config_.sources_data_bucket_root());
     server_.register_service(&sms);
     server_.bind(config_.bind_str());
     LOG(INFO) << "Serving requests at " << config_.bind_str() << " (with Riak @ "

@@ -6,8 +6,8 @@
 
 #include <rpcz/rpcz.hpp>
 
-#include <boost/uuid/uuid.hpp>            // uuid class
-#include <boost/uuid/uuid_generators.hpp> // generators
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
 #include <riak/client.hxx>
 
 #include <cstdint>
@@ -22,23 +22,20 @@ namespace saltfish {
 
 class RiakProxy;
 
+namespace sql {
+class ConnectionPool;
+}
+
+
 using uuid_t = boost::uuids::uuid;
 
-// TODO(mcobzarenco): Error reporting member function (reply<>, error_code).
-// With array from codes -> string.
 class SourceManagerServiceImpl : public SourceManagerService {
-public:
-  struct Default { // Just a poor man's namespace
-    static constexpr uint32_t MAX_GENERATE_ID_COUNT = 1000;
-    static constexpr char SOURCES_METADATA_BUCKET[] = "/ml/sources/schemas/";
-    static constexpr char SOURCES_DATA_BUCKET_ROOT[] = "/ml/sources/data/";
-  };
-
+ public:
   SourceManagerServiceImpl(
-      RiakProxy* riak_proxy,
-      uint32_t max_generate_id_count = Default::MAX_GENERATE_ID_COUNT,
-      const std::string& sources_metadata_bucket = Default::SOURCES_METADATA_BUCKET,
-      const std::string& sources_data_bucket_root = Default::SOURCES_DATA_BUCKET_ROOT);
+      RiakProxy& riak_proxy,
+      uint32_t max_generate_id_count,
+      const std::string& sources_data_bucket_root,
+      const std::string& sources_metadata_bucket = "/ml/sources/schemas/");
 
   virtual void create_source(const CreateSourceRequest& request,
                              rpcz::reply<CreateSourceResponse> reply) override;
@@ -49,7 +46,7 @@ public:
   virtual void put_records(const PutRecordsRequest& request,
                            rpcz::reply<PutRecordsResponse> reply) override;
 
-private:
+ private:
   inline int64_t generate_random_index();
   inline uuid_t generate_uuid();
 
@@ -65,7 +62,8 @@ private:
                                  std::shared_ptr<riak::object> object,
                                  riak::value_updater& update_value);
 
-  RiakProxy* riak_proxy_;
+  RiakProxy& riak_proxy_;
+  // sql::ConnectionPool sql_pool_;
 
   boost::uuids::random_generator uuid_generator_;
   std::mutex uuid_generator_mutex_;
