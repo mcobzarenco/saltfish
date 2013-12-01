@@ -9,9 +9,12 @@ namespace sql {
 
 using namespace std;
 
-ConnectionPool::ConnectionPool(const string& db, const string& server,
+ConnectionPool::ConnectionPool(const string& host, const string& db,
                                const string& user, const string& password) :
-    db_(db), server_(server), user_(user), password_(password) {
+    host_(host), db_(db), user_(user), password_(password) {
+  mysqlpp::ScopedConnection conn(*this, true);
+  CHECK(conn->thread_aware())
+    << "MySQL++ wasn't built with thread awareness. Cannot run without it.";
 }
 
 // The destructor.  We _must_ call ConnectionPool::clear() here,
@@ -25,7 +28,7 @@ mysqlpp::Connection* ConnectionPool::create() {
   // creation.  This could be something much more complex, but for
   // the purposes of the example, this suffices.
   LOG(INFO) << "create()" << endl;
-  return new mysqlpp::Connection(db_.c_str(), server_.c_str(),
+  return new mysqlpp::Connection(db_.c_str(), host_.c_str(),
                                  user_.c_str(), password_.c_str());
 }
 

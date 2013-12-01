@@ -15,7 +15,7 @@ namespace sql {
 // Do not use the abstract base class as it does old style C++ evil things
 class ConnectionPool : public mysqlpp::ConnectionPool {
  public:
-  ConnectionPool(const std::string& db, const std::string& server,
+  ConnectionPool(const std::string& host, const std::string& db,
                  const std::string& user, const std::string& password);
   ~ConnectionPool();
 
@@ -28,8 +28,8 @@ class ConnectionPool : public mysqlpp::ConnectionPool {
   unsigned int max_idle_time() override;
 
  private:
+  const std::string host_;
   const std::string db_;
-  const std::string server_;
   const std::string user_;
   const std::string password_;
 };
