@@ -17,23 +17,6 @@ namespace saltfish {
 using namespace std;
 
 
-string schema_to_str(const source::Schema& schema) {
-  auto ft_desc = source::Feature::FeatureType_descriptor();
-  ostringstream ss;
-  bool first = true;
-  ss << "[";
-  for (source::Feature f : schema.features()) {
-    if(!first)
-      ss << ", ";
-    else
-      first = false;
-    ss << "(\"" << f.name() << "\":"
-       << ft_desc->FindValueByNumber(f.feature_type())->name() << ")";
-  }
-  ss << "]";
-  return ss.str();
-}
-
 bool schema_has_duplicates(const source::Schema& schema) {
   // TODO: Maybe use a more generic function that this..
   set<string> names;

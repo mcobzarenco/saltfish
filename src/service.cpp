@@ -220,7 +220,7 @@ void SourceManagerServiceImpl::create_source(
   auto handler = bind(&SourceManagerServiceImpl::create_source_handler,
                       this, source_id, request, reply, _1,  _2,  _3);
   LOG(INFO) << "creating source (id=" << source_id
-            << ", schema=" << schema_to_str(source.schema()) << ")";
+            << ", schema='" << source.schema().ShortDebugString() << "')";
   riak_proxy_.get_object(sources_metadata_bucket_, source_id, handler);
 
   try {

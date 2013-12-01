@@ -14,7 +14,6 @@ namespace reinferio {
 namespace saltfish {
 
 // TODO(mcobzarenco): You can use .DebugString().
-std::string schema_to_str(const source::Schema& schema);
 bool schema_has_duplicates(const source::Schema& schema);
 std::pair<bool, std::string> put_records_check_schema(
     const source::Schema& schema, const PutRecordsRequest& request);
