@@ -3,7 +3,6 @@
 #include "service.hpp"
 
 #include "riak_proxy.hpp"
-#include "sql_pool.hpp"
 #include "service_utils.hpp"
 
 #include <riak/client.hxx>
@@ -22,7 +21,6 @@ namespace saltfish {
 
 using namespace std;
 using namespace std::placeholders;
-
 
 //  Error messages:
 
@@ -202,6 +200,10 @@ void SourceManagerServiceImpl::create_source_handler(
 void SourceManagerServiceImpl::create_source(
     const CreateSourceRequest& request,
     rpcz::reply<CreateSourceResponse> reply) {
+  static constexpr char CREATE_SOURCE_TEMPLATE[] =
+      "INSERT INTO mlaas.sources (source_id, user_id, `schema`, name) "
+      "VALUES (%0q:source_id, %1q:user_id, %2q:schema, %3q:name)";
+
   const auto& source = request.source();
   if (schema_has_duplicates(source.schema())) {
     reply_with_status(CreateSourceResponse::DUPLICATE_FEATURE_NAME, reply);
@@ -220,6 +222,22 @@ void SourceManagerServiceImpl::create_source(
   LOG(INFO) << "creating source (id=" << source_id
             << ", schema=" << schema_to_str(source.schema()) << ")";
   riak_proxy_.get_object(sources_metadata_bucket_, source_id, handler);
+
+  try {
+    mysqlpp::ScopedConnection conn(sql_pool_, true);
+    mysqlpp::Query query(conn->query(CREATE_SOURCE_TEMPLATE));
+    query.parse();
+    query.execute(source_id,
+                  source.user_id(),
+                  source.schema().SerializeAsString(),
+                  source.name());
+  } catch (const mysqlpp::BadQuery& e) {
+    LOG(ERROR) << "Query error: " << e.what();
+    //reply_with_status(CreateSourceResponse::UNKNOWN_ERROR, reply);
+  } catch (const mysqlpp::Exception& e) {
+    LOG(ERROR) << "MariaDB connection error: " << e.what();
+    reply_with_status(CreateSourceResponse::NETWORK_ERROR, reply);
+  }
 }
 
 /***********                      delete_source                     ***********/

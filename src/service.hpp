@@ -1,14 +1,15 @@
 #ifndef REINFERIO_SALTFISH_SERVICE_HPP
 #define REINFERIO_SALTFISH_SERVICE_HPP
 
+#include "sql_pool.hpp"
+
 #include "service.pb.h"
 #include "service.rpcz.h"
 
 #include <rpcz/rpcz.hpp>
-
+#include <riak/client.hxx>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
-#include <riak/client.hxx>
 
 #include <cstdint>
 #include <string>
@@ -21,10 +22,6 @@ namespace reinferio {
 namespace saltfish {
 
 class RiakProxy;
-
-namespace sql {
-class ConnectionPool;
-}
 
 using uuid_t = boost::uuids::uuid;
 
@@ -63,7 +60,7 @@ class SourceManagerServiceImpl : public SourceManagerService {
                                  riak::value_updater& update_value);
 
   RiakProxy& riak_proxy_;
-  sql::ConnectionPool sql_pool_;
+  sql::ConnectionPool& sql_pool_;
 
   boost::uuids::random_generator uuid_generator_;
   std::mutex uuid_generator_mutex_;

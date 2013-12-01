@@ -2,7 +2,7 @@
 #define REINFERIO_SALTFISH_SERVER_HPP
 
 #include "riak_proxy.hpp"
-#include "service.hpp"
+#include "sql_pool.hpp"
 
 #include "config.pb.h"
 
@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <string>
+#include <thread>
 
 
 namespace reinferio {
@@ -41,6 +42,7 @@ class SaltfishServer {
   rpcz::application application_;
   rpcz::server server_;
   RiakProxy riak_proxy_;
+  sql::ConnectionPool sql_pool_;
 };
 
 

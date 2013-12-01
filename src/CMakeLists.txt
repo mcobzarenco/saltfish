@@ -43,6 +43,17 @@ target_link_libraries(
     ${PROTOBUF_LIBRARY}
 )
 
+add_library(
+  sql_pool
+    sql_pool.hpp
+    sql_pool.cpp
+)
+target_link_libraries(
+  sql_pool
+    mysqlpp
+    mysqlclient
+)
+
 
 add_library(
   saltfish_service
@@ -51,12 +62,11 @@ add_library(
     service_utils.hpp
     service_utils.cpp
     riak_proxy.hpp
-    sql_pool.hpp
-    sql_pool.cpp
 )
 target_link_libraries(
   saltfish_service
     riak_proxy
+    sql_pool
     source_pb_lib
     service_pb_lib
     rpcz
@@ -76,6 +86,7 @@ add_library(
 target_link_libraries(
   saltfish_server
     riak_proxy
+    sql_pool
     saltfish_service
     ${Boost_LIBRARIES}
     ${GLOG_LIBRARY}
