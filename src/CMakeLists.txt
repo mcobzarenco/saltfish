@@ -22,8 +22,6 @@ protobuf_generate_python(SERVICE_PB_PY proto/service.proto)
 protobuf_generate_python_rpcz(SERVICE_RPCZ_PY proto/service.proto)
 # add_dependencies(${PROJECT_NAME} SOURCE_PB_PY SERVICE_PB_PY SERVICE_RPCZ_PY)
 
-include_directories(${PROJECT_BINARY_DIR}/src)
-
 
 add_library(source_pb_lib ${SOURCE_PB})
 add_library(service_pb_lib ${SERVICE_PB})
@@ -53,7 +51,6 @@ target_link_libraries(
     mysqlpp
     mysqlclient
 )
-
 
 add_library(
   saltfish_service

@@ -8,6 +8,7 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#include <sstream>
 
 
 namespace reinferio {
@@ -17,6 +18,43 @@ namespace saltfish {
 bool schema_has_duplicates(const source::Schema& schema);
 std::pair<bool, std::string> put_records_check_schema(
     const source::Schema& schema, const PutRecordsRequest& request);
+
+template<typename RecordIter>
+std::pair<bool, std::string> put_records_check_schema2(
+    const source::Schema& schema, RecordIter begin, RecordIter end) {
+  int exp_reals{0}, exp_cats{0};
+  for (auto feature : schema.features()) {
+    if (feature.feature_type() == source::Feature::INVALID) {
+      std::ostringstream msg;
+      msg << "Source unusable as its schema contains a feature marked as invalid "
+          << "(feature_name=" << feature.name() << ")";
+      return std::make_pair(false, msg.str());
+    } else if (feature.feature_type() == source::Feature::REAL) {
+      exp_reals++;
+    } else if (feature.feature_type() == source::Feature::CATEGORICAL) {
+      exp_cats++;
+    } else {
+      return std::make_pair(false, "Source contains a feature unsupported by saltfish");
+    }
+  }
+  int index{0};
+  for (auto record = begin; record != end; ++record) {
+    if (record->reals_size() != exp_reals) {
+      std::ostringstream msg;
+      msg << "Record with index " << index << " contains " << record->reals_size()
+          << " real features (expected "<< exp_reals << ")";
+      return std::make_pair(false, msg.str());
+    } else if (record->cats_size() != exp_cats) {
+      std::ostringstream msg;
+      msg << "Record with index " << index << " contains " << record->cats_size()
+          << " categorical features (expected "<< exp_cats << ")";
+      return std::make_pair(false, msg.str());
+    }
+    index++;
+  }
+  return std::make_pair(true, "");
+}
+
 
 class PutRecordsReplier {
  public:

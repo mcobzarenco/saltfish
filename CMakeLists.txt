@@ -27,5 +27,7 @@ include_directories(
   ${PROTOBUF_INCLUDE_DIR}
 )
 
+include_directories(${PROJECT_BINARY_DIR}/src)
 
 add_subdirectory(src)
+add_subdirectory(test)
