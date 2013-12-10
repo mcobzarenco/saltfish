@@ -358,8 +358,9 @@ void SourceManagerServiceImpl::put_records_check_handler(
         return;
       }
       const source::Schema& schema = source.schema();
-
-      pair<bool, string> result = put_records_check_schema(schema, request);
+      const auto& records = request.records();
+      pair<bool, string> result =
+              put_records_check_schema(schema, records.begin(), records.end());
       if (!result.first) {
         VLOG(0) << "Invalid record in put_records request: " << result.second;
         reply_with_status(PutRecordsResponse::INVALID_RECORD, reply,

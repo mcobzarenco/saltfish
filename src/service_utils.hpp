@@ -6,21 +6,20 @@
 #include <rpcz/rpcz.hpp>
 
 #include <mutex>
-#include <string>
-#include <utility>
 #include <sstream>
+#include <string>
+#include <thread>
+#include <utility>
 
 
 namespace reinferio {
 namespace saltfish {
 
-// TODO(mcobzarenco): You can use .DebugString().
 bool schema_has_duplicates(const source::Schema& schema);
-std::pair<bool, std::string> put_records_check_schema(
-    const source::Schema& schema, const PutRecordsRequest& request);
+
 
 template<typename RecordIter>
-std::pair<bool, std::string> put_records_check_schema2(
+std::pair<bool, std::string> put_records_check_schema(
     const source::Schema& schema, RecordIter begin, RecordIter end) {
   int exp_reals{0}, exp_cats{0};
   for (auto feature : schema.features()) {

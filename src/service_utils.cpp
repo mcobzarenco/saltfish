@@ -7,8 +7,6 @@
 #include <glog/logging.h>
 
 #include <set>
-#include <sstream>
-#include <thread>
 
 
 namespace reinferio {
@@ -16,53 +14,17 @@ namespace saltfish {
 
 using namespace std;
 
-
 bool schema_has_duplicates(const source::Schema& schema) {
-  // TODO: Maybe use a more generic function that this..
-  set<string> names;
-  for (const auto& feature : schema.features()) {
-    if (names.count(feature.name()) == 1)
-      return true;
-    names.insert(feature.name());
-  }
-  return false;
+    // TODO: Maybe use a more generic function that this..
+    std::set<std::string> names;
+    for (const auto& feature : schema.features()) {
+        if (names.count(feature.name()) == 1)
+            return true;
+        names.insert(feature.name());
+    }
+    return false;
 }
 
-pair<bool, string> put_records_check_schema(const source::Schema& schema,
-                                            const PutRecordsRequest& request) {
-  int exp_reals{0}, exp_cats{0};
-  for (auto feature : schema.features()) {
-    if (feature.feature_type() == source::Feature::INVALID) {
-      ostringstream msg;
-      msg << "Source unusable as its schema contains a feature marked as invalid "
-          << "(feature_name=" << feature.name() << ")";
-      return make_pair(false, msg.str());
-    } else if (feature.feature_type() == source::Feature::REAL) {
-      exp_reals++;
-    } else if (feature.feature_type() == source::Feature::CATEGORICAL) {
-      exp_cats++;
-    } else {
-      return make_pair(false, "Source contains a feature unsupported by saltfish");
-    }
-  }
-
-  int index{0};
-  for (auto record : request.records()) {
-    if (record.reals_size() != exp_reals) {
-      ostringstream msg;
-      msg << "Record with index " << index << " contains " << record.reals_size()
-          << " real features (expected "<< exp_reals << ")";
-      return make_pair(false, msg.str());
-    } else if (record.cats_size() != exp_cats) {
-      ostringstream msg;
-      msg << "Record with index " << index << " contains " << record.cats_size()
-          << " categorical features (expected "<< exp_cats << ")";
-      return make_pair(false, msg.str());
-    }
-    index++;
-  }
-  return make_pair(true, "");
-}
 
 PutRecordsReplier::PutRecordsReplier(
     const vector<string>& record_ids, rpcz::reply<PutRecordsResponse> reply)
