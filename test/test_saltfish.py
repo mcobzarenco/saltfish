@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import unittest
 import sys
 import argparse
 import multiprocessing
@@ -27,11 +28,12 @@ FAILED_PREFIX = 'TEST FAILED | '
 
 DEFAULT_DEADLINE = 2
 
-
+compiler.generate_proto(join(PROTO_ROOT, 'config.proto'), '.')
 compiler.generate_proto(join(PROTO_ROOT, 'source.proto'), '.')
 compiler.generate_proto(join(PROTO_ROOT, 'service.proto'), '.')
 compiler.generate_proto(join(PROTO_ROOT, 'service.proto'), '.',
                         with_plugin='python_rpcz', suffix='_rpcz.py')
+import config_pb2
 import source_pb2
 import service_pb2
 import service_rpcz
@@ -66,38 +68,37 @@ def make_put_records_req(source_id, record_ids=None, records=None):
     return request
 
 
-class SaltfishTester(object):
-    features = [
-        {'name': 'timestamp_ms', 'type': source_pb2.Feature.REAL},
-        {'name': 'return_stock1', 'type': source_pb2.Feature.REAL},
-        {'name': 'logvol_stock1', 'type': source_pb2.Feature.REAL},
-        {'name': 'sector_stock1', 'type': source_pb2.Feature.CATEGORICAL}
-    ]
+class SaltfishTests(unittest.TestCase):
+    config = config_pb2.Saltfish()
 
-    records = [
-        [103.31, 0.01, 97041., 'pharma'],
-        [103.47, -0.31, 22440., 'telecomms'],
-        [104.04, 0.41, 2145., 'tech'],
-        [102.40, -1.14, 21049., 'utilities']
-    ]
+    @classmethod
+    def setUpClass(cls):
+        cls._app = rpcz.Application()
+        cls._channel = cls._app.create_rpc_channel(cls.config.bind_str)
+        cls._service = service_rpcz.SourceManagerService_Stub(cls._channel)
+        cls._riakc = riak.RiakClient(protocol='pbc',
+                                     host=cls.config.riak.host,
+                                     pb_port=cls.config.riak.port)
 
-    def __init__(self, connect_str, riak_host, riak_port):
-        self._app = rpcz.Application()
-        self._channel = self._app.create_rpc_channel(connect_str)
-        self._service = service_rpcz.SourceManagerService_Stub(self._channel)
-        self._riakc = riak.RiakClient(protocol='pbc', host=riak_host, pb_port=riak_port)
+    @classmethod
+    def tearDownClass(cls):
+        pass
 
-    def run_tests(self):
-        results = {}
-        n_tests = 0
-        for t in filter(lambda x: x.startswith('test'), dir(self)):
-            n_tests += 1
-            log_run_test('Running %s' % t)
-            results[t] = getattr(self, t)()
-        log_success('SUCCESS | All %d test functions passed' % n_tests)
-        return results
+    def setUp(self):
+        self.features = [
+            {'name': 'timestamp_ms', 'type': source_pb2.Feature.REAL},
+            {'name': 'return_stock1', 'type': source_pb2.Feature.REAL},
+            {'name': 'logvol_stock1', 'type': source_pb2.Feature.REAL},
+            {'name': 'sector_stock1', 'type': source_pb2.Feature.CATEGORICAL}
+        ]
+        self.records = [
+            [103.31, 0.01, 97041., 'pharma'],
+            [103.47, -0.31, 22440., 'telecomms'],
+            [104.04, 0.41, 2145., 'tech'],
+            [102.40, -1.14, 21049., 'utilities']
+        ]
 
-    def do_test_create_source(self, source_id=None):
+    def try_create_source(self, source_id=None):
         if source_id:
             log_info('Creating a new source with a given id (id=%s)..' % source_id)
         else:
@@ -105,9 +106,9 @@ class SaltfishTester(object):
 
 
         try:
-            req = make_create_source_req(source_id, SaltfishTester.features)
+            req = make_create_source_req(source_id, self.features)
             response = self._service.create_source(req, deadline_ms=DEFAULT_DEADLINE)
-            assert response.status == service_pb2.CreateSourceResponse.OK
+            self.assertEqual(service_pb2.CreateSourceResponse.OK, response.status)
             if source_id:
                 assert response.source_id == source_id
             else:
@@ -152,11 +153,13 @@ class SaltfishTester(object):
 
     def test_create_source_with_given_id(self):
         source_id = 'test_' + str(randint(0, 10000000))
-        self.do_test_create_source(source_id)
+        self.try_create_source(source_id)
 
+    @unittest.skip("")
     def test_create_source_with_no_id(self):
-        self.do_test_create_source()
+        self.try_create_source()
 
+    @unittest.skip("")
     def test_create_source_duplicate_feature_name(self):
         features = deepcopy(SaltfishTester.features)
         features.append(features[0])
@@ -171,6 +174,7 @@ class SaltfishTester(object):
             log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
+    @unittest.skip("")
     def test_delete_source(self):
         create_request = make_create_source_req()
         delete_request = service_pb2.DeleteSourceRequest()
@@ -200,6 +204,7 @@ class SaltfishTester(object):
             log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
+    @unittest.skip("")
     def test_generate_id_multiple(self):
         N = 10
         log_info('Generating %d ids in one call to the service..' % N)
@@ -214,6 +219,7 @@ class SaltfishTester(object):
             log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
+    @unittest.skip("")
     def test_generate_id_error(self):
         log_info('Trying to generate 1000000 ids in one call. Error expected')
         req = service_pb2.GenerateIdRequest()
@@ -230,6 +236,7 @@ class SaltfishTester(object):
 
         # log_info('Calling the service %d times, generating 1 id per call' % N)
 
+    @unittest.skip("")
     def test_put_records_with_new_source(self):
         try:
             log_info('Creating a source where the records will be inserted')
@@ -257,6 +264,7 @@ class SaltfishTester(object):
             log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
+    @unittest.skip("")
     def test_put_records_with_nonexistent_source(self):
         try:
             source_id = "random_source_id_that_does_not_exist"
@@ -274,14 +282,11 @@ class SaltfishTester(object):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Muses server")
-    parser.add_argument('--connect', type=str, default=DEFAULT_CONNECT, action='store',
-                        help="ZMQ-style connect string where to connect to", metavar='STR')
-    parser.add_argument('--riak-host', type=str, default=DEFAULT_RIAK_HOST, action='store',
-                        help="Riak's hostname", metavar='HOST')
-    parser.add_argument('--riak-port', type=int, default=DEFAULT_RIAK_PORT, action='store',
-                        help="Riak's port (Protobuf protocol)", metavar='PORT')
-
+    parser.add_argument('--conf', type=str, default=None, action='store',
+                        help="Saltfish config file", metavar='FILE')
     args = parser.parse_args()
-    tester = SaltfishTester(args.connect, args.riak_host, args.riak_port)
-    results = tester.run_tests()
-    log_info(str(results))
+    if args.conf:
+        pass
+    print(SaltfishTests.config.bind_str)
+
+    unittest.main()

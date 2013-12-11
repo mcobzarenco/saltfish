@@ -8,11 +8,27 @@
 #include <utility>
 #include <tuple>
 
+#include <iostream>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
+using namespace std;
 using namespace reinferio;
 using saltfish::put_records_check_schema;
 
-TEST(SchemaHasDuplicates, EmptyNoDupsAndDups) {
+TEST(CanCopyUUIDTest, CopyUUID) {
+    boost::uuids::uuid u1 = boost::uuids::random_generator()();
+    boost::uuids::uuid u2;
+
+    source::Source source;
+    source.mutable_source_id()->assign(u1.begin(), u1.end());
+    std::copy(source.source_id().begin(), source.source_id().end(), u2.data);
+    EXPECT_EQ (u1, u2);
+    cout << to_string(u1) << " " << to_string(u2) << endl;
+}
+
+TEST(SchemaHasDuplicatesTest, EmptyNoDupsAndDups) {
   source::Schema schema;
   EXPECT_FALSE(saltfish::schema_has_duplicates(schema))
       << "empty schema - does not have duplicates";
