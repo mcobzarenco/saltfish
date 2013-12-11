@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
       return 0;
     }
 
-    saltfish::SaltfishConf conf;
+    saltfish::config::Saltfish conf;
     if (!conf_file.empty()) {
       conf = saltfish::parse_config_file(conf_file);
     }

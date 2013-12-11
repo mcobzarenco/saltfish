@@ -9,7 +9,7 @@ namespace saltfish {
 
 using namespace std;
 
-SaltfishServer::SaltfishServer(const SaltfishConf& config)
+SaltfishServer::SaltfishServer(const config::Saltfish& config)
     : config_(config), signal_ios_(), signal_thread_(),
       application_(), server_(application_),
       riak_proxy_(config.riak().host(), config.riak().port()),

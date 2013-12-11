@@ -22,7 +22,7 @@ class BadConfigFile : public std::runtime_error {
   BadConfigFile(const std::string& msg) : runtime_error(msg) {}
 };
 
-SaltfishConf parse_config_file(const std::string& file_path) {
+config::Saltfish parse_config_file(const std::string& file_path) {
   std::ifstream file;
   file.exceptions (std::ifstream::badbit);
   file.open(file_path);
@@ -31,7 +31,7 @@ SaltfishConf parse_config_file(const std::string& file_path) {
   }
 
   google::protobuf::io::IstreamInputStream proto_stream(&file);
-  SaltfishConf conf;
+  config::Saltfish conf;
   if (!google::protobuf::TextFormat::Parse(&proto_stream, &conf)) {
     throw BadConfigFile(file_path + " is not well formed");
   }
