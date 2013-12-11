@@ -69,6 +69,8 @@ inline void reply_with_status(
                 "The provided schema contains duplicate feature names."},
           {CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS,
                 "A source with the same id, but different schema already exists"},
+          {CreateSourceResponse::INVALID_SOURCE_ID,
+                "The source id provided is invalid"},
           {CreateSourceResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
         });
 
@@ -201,7 +203,7 @@ void SourceManagerServiceImpl::create_source(
     const CreateSourceRequest& request,
     rpcz::reply<CreateSourceResponse> reply) {
   static constexpr char CREATE_SOURCE_TEMPLATE[] =
-      "INSERT INTO mlaas.sources (source_id, user_id, `schema`, name) "
+      "INSERT INTO sources (source_id, user_id, `schema`, name) "
       "VALUES (%0q:source_id, %1q:user_id, %2q:schema, %3q:name)";
 
   const auto& source = request.source();
@@ -211,11 +213,16 @@ void SourceManagerServiceImpl::create_source(
   }
 
   string source_id;
-  if (source.source_id().empty()) {
-    LOG(INFO) << "Request source_id not set, generating one" ;
-    source_id = boost::uuids::to_string(generate_uuid());
-  } else {
+  if (source.source_id().size() == boost::uuids::uuid::static_size()) {
     source_id = source.source_id();
+  } else if (source.source_id().empty()) {
+    LOG(INFO) << "Request source_id not set, generating one" ;
+    boost::uuids::uuid uuid = generate_uuid();
+    source_id.assign(uuid.begin(), uuid.end());
+  } else {
+    LOG(INFO) << "create_source(): invalid source_id";
+    reply_with_status(CreateSourceResponse::INVALID_SOURCE_ID, reply);
+    return;
   }
   auto handler = bind(&SourceManagerServiceImpl::create_source_handler,
                       this, source_id, request, reply, _1,  _2,  _3);
