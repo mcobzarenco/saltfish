@@ -3,6 +3,7 @@ import unittest
 import sys
 import argparse
 import multiprocessing
+import logging
 from os.path import join
 from copy import deepcopy
 from random import randint
@@ -12,8 +13,8 @@ import rpcz
 from rpcz.rpc import RpcDeadlineExceeded
 from rpcz import compiler
 import riak
+import uuid
 
-from test_logging import *
 
 PROTO_ROOT = join('..', 'src', 'proto')
 DEFAULT_CONNECT = 'tcp://localhost:5555'
@@ -27,6 +28,11 @@ TEST_PASSED = '*** OK ***'
 FAILED_PREFIX = 'TEST FAILED | '
 
 DEFAULT_DEADLINE = 2
+
+
+log = multiprocessing.log_to_stderr()
+log.setLevel(logging.INFO)
+
 
 compiler.generate_proto(join(PROTO_ROOT, 'config.proto'), '.')
 compiler.generate_proto(join(PROTO_ROOT, 'source.proto'), '.')
@@ -43,7 +49,7 @@ def make_create_source_req(source_id=None, features=None):
     features = features or []
     request = service_pb2.CreateSourceRequest()
     if source_id:
-        request.source.source_id = str(source_id)
+        request.source.source_id = source_id
     for f in features:
         new_feat = request.source.schema.features.add()
         new_feat.name = f['name']
@@ -68,17 +74,30 @@ def make_put_records_req(source_id, record_ids=None, records=None):
     return request
 
 
+class BinaryString(str):
+    def encode(self, ignored):
+        return self
+
+
 class SaltfishTests(unittest.TestCase):
-    config = config_pb2.Saltfish()
+    _config = config_pb2.Saltfish()
+
+    @classmethod
+    def configure(cls, config):
+        cls._config = config
 
     @classmethod
     def setUpClass(cls):
         cls._app = rpcz.Application()
-        cls._channel = cls._app.create_rpc_channel(cls.config.bind_str)
+        cls._channel = cls._app.create_rpc_channel(cls._config.bind_str)
         cls._service = service_rpcz.SourceManagerService_Stub(cls._channel)
         cls._riakc = riak.RiakClient(protocol='pbc',
-                                     host=cls.config.riak.host,
-                                     pb_port=cls.config.riak.port)
+                                     host=cls._config.riak.host,
+                                     pb_port=cls._config.riak.port)
+        cls._sqlc = mysql.connect(host=cls._config.maria_db.host,
+                                  user=cls._config.user,
+                                  password=cls._config.password,
+                                  database=cls._config.db)
 
     @classmethod
     def tearDownClass(cls):
@@ -98,23 +117,22 @@ class SaltfishTests(unittest.TestCase):
             [102.40, -1.14, 21049., 'utilities']
         ]
 
-    def try_create_source(self, source_id=None):
-        if source_id:
-            log_info('Creating a new source with a given id (id=%s)..' % source_id)
-        else:
-            log_info('Creating a new source without setting the id..')
-
-
+    def try_create_source(self, request):
         try:
-            req = make_create_source_req(source_id, self.features)
-            response = self._service.create_source(req, deadline_ms=DEFAULT_DEADLINE)
+            response = self._service.create_source(request,
+                                                   deadline_ms=DEFAULT_DEADLINE)
             self.assertEqual(service_pb2.CreateSourceResponse.OK, response.status)
-            if source_id:
-                assert response.source_id == source_id
-            else:
-                source_id = response.source_id
+            if request.source.source_id:
+                self.assertEqual(response.source_id, request.source.source_id)
+            source_id = response.source_id
+            cur = SaltfishTester._sqlc.cursor()
+            cur.execute(
+                'select source_id, user_id, `schema`, name, created'
+                'from sources where source_id = %s', (source_id, ))
+            rows = cur.fetchall()
+            self.assertEqual(1, len(rows))
 
-            remote_data = self._riakc.bucket(SOURCES_META_BUCKET).get(source_id)
+            remote_data = self._riakc.get(obj)
             assert remote_data.encoded_data is not None
             remote_source = source_pb2.Source()
             remote_source.ParseFromString(remote_data.encoded_data)
@@ -126,37 +144,40 @@ class SaltfishTests(unittest.TestCase):
             assert remote_features == SaltfishTester.features
             log_success(TEST_PASSED)
 
-            log_info('Sending a 2nd identical request to check idempotentcy (source_id=%s)'
+            log.info('Sending a 2nd identical request to check idempotentcy (source_id=%s)'
                      % source_id)
             response = self._service.create_source(req, deadline_ms=DEFAULT_DEADLINE)
             assert response.status == service_pb2.CreateSourceResponse.OK
             log_success(TEST_PASSED)
 
-            log_info('Trying same id, but different schema. ' \
+            log.info('Trying same id, but different schema. ' \
                      'Error expected (source_id=%s)' % source_id)
             features = deepcopy(SaltfishTester.features)
             features[1]['type'] = source_pb2.Feature.CATEGORICAL
             req2 = make_create_source_req(source_id, features)
             response = self._service.create_source(req2, deadline_ms=DEFAULT_DEADLINE)
             assert response.status == service_pb2.CreateSourceResponse.SOURCE_ID_ALREADY_EXISTS
-            log_info('Got error message: "%s"' % response.msg)
+            log.info('Got error message: "%s"' % response.msg)
             log_success(TEST_PASSED)
         except rpcz.rpc.RpcDeadlineExceeded:
-            log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
+            log.error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
         except google.protobuf.message.DecodeError:
-            log_error(FAILED_PREFIX + 'Could not parse the source schema @ (b=%s, k=%s))'
+            log.error(FAILED_PREFIX + 'Could not parse the source schema @ (b=%s, k=%s))'
                       % (SOURCES_META_BUCKET, source_id))
             sys.exit(1)
 
     ### Test functions ###
 
     def test_create_source_with_given_id(self):
-        source_id = 'test_' + str(randint(0, 10000000))
-        self.try_create_source(source_id)
+        source_id = uuid.uuid4()
+        request = make_create_source_req(source_id.get_bytes_le(), self.features)
+        log.info('Creating a new source with a given id (id=%s)..' % str(source_id))
+        self.try_create_source(request)
 
     @unittest.skip("")
     def test_create_source_with_no_id(self):
+        log.info('Creating a new source without setting the id..')
         self.try_create_source()
 
     @unittest.skip("")
@@ -164,21 +185,21 @@ class SaltfishTests(unittest.TestCase):
         features = deepcopy(SaltfishTester.features)
         features.append(features[0])
         request = make_create_source_req(features=features)
-        log_info("Creating source with duplicate feature name in schema. Error expected")
+        log.info("Creating source with duplicate feature name in schema. Error expected")
         try:
             response = self._service.create_source(request, deadline_ms=DEFAULT_DEADLINE)
             assert response.status == service_pb2.CreateSourceResponse.DUPLICATE_FEATURE_NAME
-            log_info('Got error message: "%s"' % response.msg)
+            log.info('Got error message: "%s"' % response.msg)
             log_success(TEST_PASSED)
         except rpcz.rpc.RpcDeadlineExceeded:
-            log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
+            log.error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
     @unittest.skip("")
     def test_delete_source(self):
         create_request = make_create_source_req()
         delete_request = service_pb2.DeleteSourceRequest()
-        log_info('Creating a source in order to delete it')
+        log.info('Creating a source in order to delete it')
         try:
             create_response = self._service.create_source(create_request, deadline_ms=DEFAULT_DEADLINE)
             assert create_response.status == service_pb2.CreateSourceResponse.OK
@@ -187,7 +208,7 @@ class SaltfishTests(unittest.TestCase):
             remote_data = self._riakc.bucket(SOURCES_META_BUCKET).get(source_id)
             assert remote_data.encoded_data is not None
 
-            log_info('Deleting the just created source with id=%s' % source_id)
+            log.info('Deleting the just created source with id=%s' % source_id)
             delete_request.source_id = source_id
             delete_response = self._service.delete_source(delete_request, deadline_ms=DEFAULT_DEADLINE)
             assert delete_response.status == service_pb2.DeleteSourceResponse.OK
@@ -196,18 +217,18 @@ class SaltfishTests(unittest.TestCase):
             assert remote_data.encoded_data is None
             log_success(TEST_PASSED)
 
-            log_info('Making a 2nd identical delete_source call to check idempotentcy (source_id=%s)' % source_id)
+            log.info('Making a 2nd identical delete_source call to check idempotentcy (source_id=%s)' % source_id)
             delete_response = self._service.delete_source(delete_request, deadline_ms=DEFAULT_DEADLINE)
             assert delete_response.status == service_pb2.DeleteSourceResponse.OK
             log_success(TEST_PASSED)
         except rpcz.rpc.RpcDeadlineExceeded:
-            log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
+            log.error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
     @unittest.skip("")
     def test_generate_id_multiple(self):
         N = 10
-        log_info('Generating %d ids in one call to the service..' % N)
+        log.info('Generating %d ids in one call to the service..' % N)
         req = service_pb2.GenerateIdRequest()
         req.count = N
         try:
@@ -216,67 +237,67 @@ class SaltfishTests(unittest.TestCase):
             assert len(response.ids) == N
             log_success(TEST_PASSED)
         except rpcz.rpc.RpcDeadlineExceeded:
-            log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
+            log.error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
     @unittest.skip("")
     def test_generate_id_error(self):
-        log_info('Trying to generate 1000000 ids in one call. Error expected')
+        log.info('Trying to generate 1000000 ids in one call. Error expected')
         req = service_pb2.GenerateIdRequest()
         req.count = 1000000
         try:
             response = self._service.generate_id(req, deadline_ms=DEFAULT_DEADLINE)
             assert response.status == service_pb2.GenerateIdResponse.COUNT_TOO_LARGE
             assert len(response.ids) == 0
-            log_info('Got error message: "%s"' % response.msg)
+            log.info('Got error message: "%s"' % response.msg)
             log_success(TEST_PASSED)
         except rpcz.rpc.RpcDeadlineExceeded:
-            log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
+            log.error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
-        # log_info('Calling the service %d times, generating 1 id per call' % N)
+        # log.info('Calling the service %d times, generating 1 id per call' % N)
 
     @unittest.skip("")
     def test_put_records_with_new_source(self):
         try:
-            log_info('Creating a source where the records will be inserted')
+            log.info('Creating a source where the records will be inserted')
             create_source_req = make_create_source_req(features=SaltfishTester.features)
             create_source_resp = self._service.create_source(create_source_req, deadline_ms=DEFAULT_DEADLINE)
             assert create_source_resp.status == service_pb2.CreateSourceResponse.OK
             source_id = create_source_resp.source_id
 
-            log_info('Inserting %d records into newly created source (id=%s)' %
+            log.info('Inserting %d records into newly created source (id=%s)' %
                      (len(SaltfishTester.records), source_id))
             request = make_put_records_req(source_id, records=SaltfishTester.records)
-            log_info("reals=%s; cats=%s" % (str(request.records[0].reals), str(request.records[0].cats)))
+            log.info("reals=%s; cats=%s" % (str(request.records[0].reals), str(request.records[0].cats)))
             response = self._service.put_records(request, deadline_ms=DEFAULT_DEADLINE)
             assert response.status == service_pb2.PutRecordsResponse.OK
-            log_info(response.record_ids)
-            log_info(SaltfishTester.records)
+            log.info(response.record_ids)
+            log.info(SaltfishTester.records)
             assert len(response.record_ids) == len(SaltfishTester.records)
             bucket = SOURCES_DATA_BUCKET_ROOT + source_id + '/'
             for record_id in response.record_ids:
-                     log_info('Checking record at b=%s / k=%s)' % (bucket, record_id))
+                     log.info('Checking record at b=%s / k=%s)' % (bucket, record_id))
                      remote_data = self._riakc.bucket(bucket).get(record_id)
                      assert remote_data.encoded_data is not None
-            log_info('Got message: "%s"' % response.msg)
+            log.info('Got message: "%s"' % response.msg)
         except rpcz.rpc.RpcDeadlineExceeded:
-            log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
+            log.error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
     @unittest.skip("")
     def test_put_records_with_nonexistent_source(self):
         try:
             source_id = "random_source_id_that_does_not_exist"
-            log_info('Inserting %d records into a non-exsistent source (id=%s) Error expected' %
+            log.info('Inserting %d records into a non-exsistent source (id=%s) Error expected' %
                      (len(SaltfishTester.records), source_id))
             request = make_put_records_req(source_id, records=SaltfishTester.records)
             response = self._service.put_records(request, deadline_ms=DEFAULT_DEADLINE)
             assert response.status == service_pb2.PutRecordsResponse.INVALID_SOURCE_ID
             assert len(response.record_ids) == 0
-            log_info('Got error message: "%s"' % response.msg)
+            log.info('Got error message: "%s"' % response.msg)
         except rpcz.rpc.RpcDeadlineExceeded:
-            log_error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
+            log.error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
 
@@ -287,6 +308,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.conf:
         pass
-    print(SaltfishTests.config.bind_str)
+    print(SaltfishTests._config.bind_str)
 
     unittest.main()

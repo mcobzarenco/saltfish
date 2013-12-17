@@ -128,6 +128,14 @@ inline std::function<int64_t()> init_uniform_distribution() noexcept {
       numeric_limits<int64_t>::min(), numeric_limits<int64_t>::max());
   return bind(distribution, generator);
 }
+
+inline boost::uuids::uuid from_string(const string& s) {
+  CHECK_EQ(boost::uuids::uuid::static_size(), s.size())
+      << "a uuid has exactly " << boost::uuids::uuid::static_size() << " bytes";
+  boost::uuids::uuid uuid;
+  copy(s.begin(), s.end(), uuid.begin());
+  return uuid;
+}
 } //  anonymous namespace
 
 
@@ -216,19 +224,20 @@ void SourceManagerServiceImpl::create_source(
   if (source.source_id().size() == boost::uuids::uuid::static_size()) {
     source_id = source.source_id();
   } else if (source.source_id().empty()) {
-    LOG(INFO) << "Request source_id not set, generating one" ;
+    LOG(INFO) << "create_source() request source_id not set, generating one" ;
     boost::uuids::uuid uuid = generate_uuid();
     source_id.assign(uuid.begin(), uuid.end());
   } else {
-    LOG(INFO) << "create_source(): invalid source_id";
+    LOG(INFO) << "create_source() invalid source_id";
     reply_with_status(CreateSourceResponse::INVALID_SOURCE_ID, reply);
     return;
   }
   auto handler = bind(&SourceManagerServiceImpl::create_source_handler,
                       this, source_id, request, reply, _1,  _2,  _3);
-  LOG(INFO) << "creating source (id=" << source_id
+  LOG(INFO) << "create_source() inserting source (id="
+            << boost::uuids::to_string(from_string(source_id))
             << ", schema='" << source.schema().ShortDebugString() << "')";
-  riak_proxy_.get_object(sources_metadata_bucket_, source_id, handler);
+  // riak_proxy_.get_object(sources_metadata_bucket_, source_id, handler);
 
   try {
     mysqlpp::ScopedConnection conn(sql_pool_, true);
@@ -238,11 +247,15 @@ void SourceManagerServiceImpl::create_source(
                   source.user_id(),
                   source.schema().SerializeAsString(),
                   source.name());
+    CreateSourceResponse response;
+    response.set_status(CreateSourceResponse::OK);
+    response.set_source_id(source_id);
+    reply.send(response);
   } catch (const mysqlpp::BadQuery& e) {
-    LOG(ERROR) << "Query error: " << e.what();
-    //reply_with_status(CreateSourceResponse::UNKNOWN_ERROR, reply);
+    LOG(ERROR) << "create_source() query error: " << e.what();
+    reply_with_status(CreateSourceResponse::UNKNOWN_ERROR, reply);
   } catch (const mysqlpp::Exception& e) {
-    LOG(ERROR) << "MariaDB connection error: " << e.what();
+    LOG(ERROR) << "create_source() MariaDB connection error: " << e.what();
     reply_with_status(CreateSourceResponse::NETWORK_ERROR, reply);
   }
 }
