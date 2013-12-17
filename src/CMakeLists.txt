@@ -76,6 +76,8 @@ add_library(
   saltfish_server
     server.hpp
     server.cpp
+    publishers.hpp
+    publishers.cpp
     service.hpp
     riak_proxy.hpp
     ${CONFIG_PB}
@@ -85,6 +87,8 @@ target_link_libraries(
     riak_proxy
     sql_pool
     saltfish_service
+    rabbitmq
+    SimpleAmqpClient
     ${Boost_LIBRARIES}
     ${GLOG_LIBRARY}
     ${PROTOBUF_LIBRARY}

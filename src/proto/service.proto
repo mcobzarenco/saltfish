@@ -21,7 +21,7 @@ message CreateSourceResponse {
   optional Status status = 1;
   optional string msg = 2;
 
-  optional string source_id = 3;
+  optional bytes source_id = 3;
 }
 
 
@@ -97,6 +97,15 @@ message PutRecordsResponse {
 
 
 /*****************            SourceManagerService           *****************/
+
+enum RequestType {
+    UNKNOWN_REQUEST = 0;
+    ALL = 1;
+    CREATE_SOURCE = 2;
+    DELETE_SOURCE = 3;
+    GENERATE_ID = 4;
+    PUT_RECORDS = 5;
+}
 
 service SourceManagerService  {
   rpc create_source(CreateSourceRequest) returns (CreateSourceResponse);

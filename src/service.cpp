@@ -131,11 +131,11 @@ inline std::function<int64_t()> init_uniform_distribution() noexcept {
 } //  anonymous namespace
 
 
-SourceManagerServiceImpl::SourceManagerServiceImpl(
+SaltfishServiceImpl::SaltfishServiceImpl(
     RiakProxy& riak_proxy,
     sql::ConnectionPool& sql_pool,
     uint32_t max_generate_id_count,
-    const string& sources_data_bucket_root,
+    const string& sources_data_bucket_prefix,
     const string& sources_metadata_bucket)
     : riak_proxy_(riak_proxy),
       sql_pool_(sql_pool),
@@ -143,12 +143,35 @@ SourceManagerServiceImpl::SourceManagerServiceImpl(
       uniform_distribution_(init_uniform_distribution()),
       max_generate_id_count_(max_generate_id_count),
       sources_metadata_bucket_(sources_metadata_bucket),
-      sources_data_bucket_root_(sources_data_bucket_root) {
+      sources_data_bucket_prefix_(sources_data_bucket_prefix) {
 }
+
+void SaltfishServiceImpl::register_listener(
+    RequestType req_type, Listener&& listener) {
+  listens_to_.emplace_back(req_type);
+  listeners_.emplace_back(listener);
+  CHECK_EQ(listens_to_.size(), listeners_.size())
+      << "Invalid mapping between request types and handlers";
+}
+
+void SaltfishServiceImpl::call_listeners(
+    RequestType request_type, const string& request) {
+  CHECK_EQ(listens_to_.size(), listeners_.size())
+      << "Invalid mapping between request types and handlers";
+  auto listener = listeners_.cbegin();
+  for (auto listen = listens_to_.cbegin();
+       listen != listens_to_.cend();
+       ++listen, ++listener) {
+    if(*listen == request_type || *listen == RequestType::ALL) {
+      (*listener)(*listen, request);
+    }
+  }
+}
+
 
 /***********                      create_source                     ***********/
 
-void SourceManagerServiceImpl::create_source_handler(
+void SaltfishServiceImpl::create_source_handler(
     const string& source_id,
     const CreateSourceRequest& request,
     rpcz::reply<CreateSourceResponse> reply,
@@ -199,7 +222,7 @@ void SourceManagerServiceImpl::create_source_handler(
   }
 }
 
-void SourceManagerServiceImpl::create_source(
+void SaltfishServiceImpl::create_source(
     const CreateSourceRequest& request,
     rpcz::reply<CreateSourceResponse> reply) {
   static constexpr char CREATE_SOURCE_TEMPLATE[] =
@@ -224,7 +247,9 @@ void SourceManagerServiceImpl::create_source(
     reply_with_status(CreateSourceResponse::INVALID_SOURCE_ID, reply);
     return;
   }
-  auto handler = bind(&SourceManagerServiceImpl::create_source_handler,
+  call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
+
+  auto handler = bind(&SaltfishServiceImpl::create_source_handler,
                       this, source_id, request, reply, _1,  _2,  _3);
   LOG(INFO) << "creating source (id=" << source_id
             << ", schema='" << source.schema().ShortDebugString() << "')";
@@ -249,7 +274,7 @@ void SourceManagerServiceImpl::create_source(
 
 /***********                      delete_source                     ***********/
 
-void SourceManagerServiceImpl::delete_source(
+void SaltfishServiceImpl::delete_source(
     const DeleteSourceRequest& request,
     rpcz::reply<DeleteSourceResponse> reply) {
   // TODO: Make sure the actual data is deleted by some job later
@@ -269,18 +294,18 @@ void SourceManagerServiceImpl::delete_source(
   };
 
   riak_proxy_.delete_object(sources_metadata_bucket_,
-                             request.source_id(),
-                             handler);
+                            request.source_id(),
+                            handler);
 }
 
 /***********                       generate_id                      ***********/
 
-uuid_t SourceManagerServiceImpl::generate_uuid() {
+uuid_t SaltfishServiceImpl::generate_uuid() {
   std::lock_guard<std::mutex> generate_uuid_lock(uuid_generator_mutex_);
   return uuid_generator_();
 }
 
-void SourceManagerServiceImpl::generate_id(
+void SaltfishServiceImpl::generate_id(
     const GenerateIdRequest& request,
     rpcz::reply<GenerateIdResponse> reply) {
   VLOG(0) << "generate_id(count=" << request.count() << ")";
@@ -302,7 +327,7 @@ void SourceManagerServiceImpl::generate_id(
 
 /***********                       put_records                      ***********/
 
-int64_t SourceManagerServiceImpl::generate_random_index() {
+int64_t SaltfishServiceImpl::generate_random_index() {
   std::lock_guard<std::mutex>
       uniform_distribution_lock(uniform_distribution_mutex_);
   return uniform_distribution_();
@@ -348,7 +373,7 @@ void put_records_get_handler(const source::Record& record,
 }  // namespace
 
 
-void SourceManagerServiceImpl::put_records_check_handler(
+void SaltfishServiceImpl::put_records_check_handler(
     const PutRecordsRequest& request,
     rpcz::reply<PutRecordsResponse> reply,
     const std::error_code& error,
@@ -396,7 +421,7 @@ void SourceManagerServiceImpl::put_records_check_handler(
         auto handler = bind(&put_records_get_handler, record,
                             generate_random_index(),  replier, _1,  _2,  _3);
         ostringstream bucket;
-        bucket << sources_data_bucket_root_ << request.source_id() << "/";
+        bucket << sources_data_bucket_prefix_ << request.source_id() << "/";
         VLOG(0) << "Queueing put_record @ (b=" << bucket.str()
                 << " k=" << record_id << ")";
         riak_proxy_.get_object(bucket.str(), record_id, handler);
@@ -459,7 +484,7 @@ void put_handler(const PutRecordsRequest& request,
 */
 
 
-void SourceManagerServiceImpl::put_records(
+void SaltfishServiceImpl::put_records(
     const PutRecordsRequest& request,
     rpcz::reply<PutRecordsResponse> reply) {
   uint32_t n_record_ids = request.record_ids_size();
@@ -481,11 +506,9 @@ void SourceManagerServiceImpl::put_records(
     return;
   }
 
-  auto handler = bind(&SourceManagerServiceImpl::put_records_check_handler,
+  auto handler = bind(&SaltfishServiceImpl::put_records_check_handler,
                       this, request, reply, _1, _2, _3);
   riak_proxy_.get_object(sources_metadata_bucket_, request.source_id(), handler);
 }
 
-
-}  // namespace saltfish
-}  // namespace reinferio
+}}  // namespace reinferio::saltfish
