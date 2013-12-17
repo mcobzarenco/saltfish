@@ -9,12 +9,6 @@ namespace saltfish {
 using namespace std;
 
 
-void worker_thread(boost::asio::io_service* ios) {
-  LOG(INFO) << "Calling io_service::run() in thread " << std::this_thread::get_id();
-  ios->run();
-  LOG(INFO) << "Exiting thread " << std::this_thread::get_id();
-}
-
 // TODO: Actually handle sibling resolution.
 std::shared_ptr<riak::object> random_sibling_resolution(const riak::siblings&) {
   std::cout << "Siblings being resolved!" << std::endl;
@@ -23,11 +17,10 @@ std::shared_ptr<riak::object> random_sibling_resolution(const riak::siblings&) {
   return new_content;
 }
 
-RiakProxy::RiakProxy(const string& host, uint16_t port, uint8_t n_workers)
-    :host_(host), port_(port), n_workers_(n_workers), ios_(),
-     work_(new boost::asio::io_service::work(ios_)) {
-  connect();
-  init_threads();
+RiakProxy::RiakProxy(const string& host, uint16_t port,
+                     boost::asio::io_service& ios)
+    :host_(host), port_(port), ios_(ios) {
+    connect();
 }
 
 void RiakProxy::get_object(const string& bucket, const string& key,
@@ -49,13 +42,6 @@ void RiakProxy::connect() {
   connection_ = riak::make_single_socket_transport(host_, port_, ios_);
   // this->connection = transport::make_zmq_riak_transport("tcp://localhost:5005");
   client_ = riak::make_client(connection_, &random_sibling_resolution, ios_);
-}
-
-void RiakProxy::init_threads() {
-  LOG(INFO) << "Spawning " << n_workers_ << " worker threads in Riak proxy";
-  for (uint8_t i = 0; i < n_workers_; ++i) {
-    threads_.emplace_back(std::bind(worker_thread, &ios_));
-  }
 }
 
 
