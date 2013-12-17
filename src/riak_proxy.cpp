@@ -43,11 +43,6 @@ void RiakProxy::delete_object(const string& bucket, const string& key,
 }
 
 RiakProxy::~RiakProxy() {
-  LOG(INFO) << "Riak proxy is shutting down..";
-  work_.reset();
-  for (auto t = threads_.begin(); t != threads_.end(); ++t) {
-    t->join();
-  }
 }
 
 void RiakProxy::connect() {
