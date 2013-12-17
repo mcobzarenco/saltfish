@@ -21,14 +21,14 @@ message CreateSourceResponse {
   optional Status status = 1;
   optional string msg = 2;
 
-  optional string source_id = 3;
+  optional bytes source_id = 3;
 }
 
 
 /*****************      SourceManager::delete_source      *****************/
 
 message DeleteSourceRequest {
-  required string source_id = 1;
+  required bytes source_id = 1;
 }
 
 message DeleteSourceResponse {
@@ -62,7 +62,7 @@ message GenerateIdResponse {
   }
   optional Status status = 1;
   optional string msg = 2;
-  repeated string ids = 3;
+  repeated bytes ids = 3;
 }
 
 
@@ -73,8 +73,8 @@ message GenerateIdResponse {
 // TODO(mcobzarenco): Think about what happens to empty record_ids.
 // TODO(mcobzarenco): Make Metadata message type which contains Schema.
 message PutRecordsRequest {
-  optional string source_id = 1;
-  repeated string record_ids = 2;
+  optional bytes source_id = 1;
+  repeated bytes record_ids = 2;
   repeated reinferio.source.Record records = 3;
 }
 
@@ -92,7 +92,7 @@ message PutRecordsResponse {
   optional Status status = 1;
   optional string msg = 2;
 
-  repeated string record_ids = 3;
+  repeated bytes record_ids = 3;
 }
 
 
@@ -109,7 +109,7 @@ service SourceManagerService  {
 /*****************     SourceSamplerService::sample_source    *****************/
 
 message SampleSourceRequest {
-  optional string source_id = 1;
+  optional bytes source_id = 1;
   optional uint32 max_count = 2;
 }
 
