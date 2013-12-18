@@ -3,6 +3,7 @@
 
 #include "riak_proxy.hpp"
 #include "sql_pool.hpp"
+#include "publishers.hpp"
 
 #include "config.pb.h"
 
@@ -37,12 +38,18 @@ class SaltfishServer {
   config::Saltfish config_;
 
   boost::asio::io_service signal_ios_;
-  std::unique_ptr<std::thread> signal_thread_;
+  std::unique_ptr<std::thread>
+  signal_thread_;
+
+  boost::asio::io_service ios_;
+  std::unique_ptr<boost::asio::io_service::work> work_;
+  std::vector<std::thread> threads_;
 
   rpcz::application application_;
   rpcz::server server_;
   RiakProxy riak_proxy_;
   sql::ConnectionPool sql_pool_;
+  RabbitPublisher rabbit_pub_;
 };
 
 

@@ -16,6 +16,8 @@
 #include <memory>
 #include <system_error>
 #include <mutex>
+#include <functional>
+#include <vector>
 
 
 namespace reinferio {
@@ -25,14 +27,26 @@ class RiakProxy;
 
 using uuid_t = boost::uuids::uuid;
 
-class SourceManagerServiceImpl : public SourceManagerService {
+class SaltfishService : public SourceManagerService {
  public:
-  SourceManagerServiceImpl(
+  using Listener = std::function<void(RequestType req_type,
+                                      const std::string&)>;
+
+  virtual void register_listener(RequestType req_type,
+                                 Listener&& listener) = 0;
+};
+
+class SaltfishServiceImpl : public SaltfishService {
+ public:
+  SaltfishServiceImpl(
       RiakProxy& riak_proxy,
       sql::ConnectionPool& sql_pool,
       uint32_t max_generate_id_count,
-      const std::string& sources_data_bucket_root,
+      const std::string& sources_data_bucket_prefix,
       const std::string& sources_metadata_bucket = "/ml/sources/schemas/");
+
+  virtual void register_listener(RequestType req_type,
+                                 Listener&& listener) override;
 
   virtual void create_source(const CreateSourceRequest& request,
                              rpcz::reply<CreateSourceResponse> reply) override;
@@ -42,8 +56,9 @@ class SourceManagerServiceImpl : public SourceManagerService {
                            rpcz::reply<GenerateIdResponse> reply) override;
   virtual void put_records(const PutRecordsRequest& request,
                            rpcz::reply<PutRecordsResponse> reply) override;
-
  private:
+  inline void call_listeners(RequestType req_type, const std::string& request);
+
   inline int64_t generate_random_index();
   inline uuid_t generate_uuid();
 
@@ -69,11 +84,12 @@ class SourceManagerServiceImpl : public SourceManagerService {
 
   uint32_t max_generate_id_count_;
   const std::string sources_metadata_bucket_;
-  const std::string sources_data_bucket_root_;
+  const std::string sources_data_bucket_prefix_;
+
+  std::vector<RequestType> listens_to_;
+  std::vector<Listener> listeners_;
 };
 
-
-}  // namespace saltfish
-}  // namespace reinferio
+}}  // namespace reinferio::saltfish
 
 #endif  // REINFERIO_SALTFISH_SERVICE_HPP

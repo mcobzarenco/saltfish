@@ -168,7 +168,7 @@ class SaltfishTests(unittest.TestCase):
             sys.exit(1)
 
     ### Test functions ###
-
+    @unittest.skip("")
     def test_create_source_with_given_id(self):
         source_id = uuid.uuid4()
         request = make_create_source_req(source_id.get_bytes_le(), self.features)
@@ -300,6 +300,14 @@ class SaltfishTests(unittest.TestCase):
             log.error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
+    def test_rabbitmq_publisher(self):
+        request = service_pb2.CreateSourceRequest()
+        for f in self.features:
+            new_feat = request.source.schema.features.add()
+            new_feat.name = f['name']
+            new_feat.feature_type = f['type']
+        response = self._service.create_source(request,
+                                               deadline_ms=DEFAULT_DEADLINE)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Muses server")
@@ -308,6 +316,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.conf:
         pass
-    print(SaltfishTests._config.bind_str)
-
     unittest.main()

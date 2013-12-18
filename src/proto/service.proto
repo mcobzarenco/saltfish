@@ -98,6 +98,15 @@ message PutRecordsResponse {
 
 /*****************            SourceManagerService           *****************/
 
+enum RequestType {
+    UNKNOWN_REQUEST = 0;
+    ALL = 1;
+    CREATE_SOURCE = 2;
+    DELETE_SOURCE = 3;
+    GENERATE_ID = 4;
+    PUT_RECORDS = 5;
+}
+
 service SourceManagerService  {
   rpc create_source(CreateSourceRequest) returns (CreateSourceResponse);
   rpc delete_source(DeleteSourceRequest) returns (DeleteSourceResponse);

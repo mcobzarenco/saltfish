@@ -6,18 +6,26 @@ message Riak {
 }
 
 message MariaDB {
-  optional string host = 1      [default = "localhost"];
+  optional string host = 1      [default = "127.0.0.1"];
   optional string db = 2        [default = "mlaas"];
   optional string user = 3      [default = "root"];
   optional string password = 4  [default = ""];
+}
+
+message RabbitMQ {
+  optional string host = 1      [default = "127.0.0.1"];
+  optional uint32 port = 2      [default = 5672];
+  optional string user = 3      [default = "guest"];
+  optional string password = 4  [default = "guest"];
 }
 
 message Saltfish {
   optional string bind_str = 1 [default = "tcp://127.0.0.1:5555"];
 
   optional uint32 max_generate_id_count = 2 [default = 1000];
-  optional string sources_data_bucket_root = 3 [default = "/ml/sources/data/"];
+  optional string sources_data_bucket_prefix = 3 [default = "/ml/sources/data/"];
 
   optional Riak riak = 4;
   optional MariaDB maria_db = 5;
+  optional RabbitMQ rabbit_mq = 6;
 }
