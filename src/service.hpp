@@ -8,6 +8,7 @@
 
 #include <rpcz/rpcz.hpp>
 #include <riak/client.hxx>
+#include <boost/asio.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 
@@ -33,7 +34,7 @@ class SaltfishService : public SourceManagerService {
                                       const std::string&)>;
 
   virtual void register_listener(RequestType req_type,
-                                 Listener&& listener) = 0;
+                                 const Listener& listener) = 0;
 };
 
 class SaltfishServiceImpl : public SaltfishService {
@@ -41,12 +42,12 @@ class SaltfishServiceImpl : public SaltfishService {
   SaltfishServiceImpl(
       RiakProxy& riak_proxy,
       sql::ConnectionPool& sql_pool,
+      boost::asio::io_service& ios,
       uint32_t max_generate_id_count,
-      const std::string& sources_data_bucket_prefix,
-      const std::string& sources_metadata_bucket = "/ml/sources/schemas/");
+      const std::string& sources_data_bucket_prefix);
 
-  virtual void register_listener(RequestType req_type,
-                                 Listener&& listener) override;
+  SaltfishServiceImpl(const SaltfishServiceImpl&) = delete;
+  SaltfishServiceImpl& operator=(const SaltfishServiceImpl&) = delete;
 
   virtual void create_source(const CreateSourceRequest& request,
                              rpcz::reply<CreateSourceResponse> reply) override;
@@ -56,8 +57,24 @@ class SaltfishServiceImpl : public SaltfishService {
                            rpcz::reply<GenerateIdResponse> reply) override;
   virtual void put_records(const PutRecordsRequest& request,
                            rpcz::reply<PutRecordsResponse> reply) override;
+
+  virtual void register_listener(RequestType req_type,
+                                 const Listener& listener) override {
+    listeners_.emplace_back(req_type, listener, ios_);
+  }
  private:
-  inline void call_listeners(RequestType req_type, const std::string& request);
+  class ListenerInfo {
+   public:
+    ListenerInfo(RequestType req_type, const Listener& hdl,
+                 boost::asio::io_service& ios)
+        : listens_to(req_type), handler(hdl), strand(ios) {}
+
+    RequestType listens_to;
+    Listener handler;
+    boost::asio::io_service::strand strand;
+  };
+
+  inline void async_call_listeners(RequestType req_type, const std::string& request);
 
   inline int64_t generate_random_index();
   inline uuid_t generate_uuid();
@@ -76,6 +93,7 @@ class SaltfishServiceImpl : public SaltfishService {
 
   RiakProxy& riak_proxy_;
   sql::ConnectionPool& sql_pool_;
+  boost::asio::io_service& ios_;
 
   boost::uuids::random_generator uuid_generator_;
   std::mutex uuid_generator_mutex_;
@@ -83,11 +101,9 @@ class SaltfishServiceImpl : public SaltfishService {
   std::mutex uniform_distribution_mutex_;
 
   uint32_t max_generate_id_count_;
-  const std::string sources_metadata_bucket_;
   const std::string sources_data_bucket_prefix_;
 
-  std::vector<RequestType> listens_to_;
-  std::vector<Listener> listeners_;
+  std::vector<ListenerInfo> listeners_;
 };
 
 }}  // namespace reinferio::saltfish

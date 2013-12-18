@@ -36,6 +36,7 @@ void ConnectionPool::destroy(mysqlpp::Connection* conn) {
   // Our superclass can't know how we created the Connection, so
   // it delegates destruction to us, to be safe.
   LOG(INFO) << "destroy()" << endl;
+  conn->disconnect();  //TODO: does it throw?
   delete conn;
 }
 

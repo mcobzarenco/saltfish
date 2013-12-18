@@ -37,6 +37,7 @@ SaltfishServer::~SaltfishServer() noexcept {
     signal_thread_->join();
   }
   work_.reset();
+  ios_.stop();
   for (auto t = threads_.begin(); t != threads_.end(); ++t) {
     t->join();
   }
@@ -45,8 +46,9 @@ SaltfishServer::~SaltfishServer() noexcept {
 void SaltfishServer::run() noexcept {
   try {
     saltfish::SaltfishServiceImpl saltfish_serv(
-        riak_proxy_, sql_pool_,
-        config_.max_generate_id_count(), config_.sources_data_bucket_prefix());
+        riak_proxy_, sql_pool_, ios_,
+        config_.max_generate_id_count(),
+        config_.sources_data_bucket_prefix());
     auto rmq_listener = bind(&RabbitPublisher::publish, &rabbit_pub_, _1, _2);
     saltfish_serv.register_listener(RequestType::ALL, rmq_listener);
 

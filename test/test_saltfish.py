@@ -1,9 +1,11 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 import unittest
 import sys
 import argparse
 import multiprocessing
 import logging
+import unicodedata
 from os.path import join
 from copy import deepcopy
 from random import randint
@@ -12,6 +14,7 @@ import google.protobuf
 import rpcz
 from rpcz.rpc import RpcDeadlineExceeded
 from rpcz import compiler
+import mysql.connector
 import riak
 import uuid
 
@@ -33,7 +36,6 @@ DEFAULT_DEADLINE = 2
 log = multiprocessing.log_to_stderr()
 log.setLevel(logging.INFO)
 
-
 compiler.generate_proto(join(PROTO_ROOT, 'config.proto'), '.')
 compiler.generate_proto(join(PROTO_ROOT, 'source.proto'), '.')
 compiler.generate_proto(join(PROTO_ROOT, 'service.proto'), '.')
@@ -45,11 +47,13 @@ import service_pb2
 import service_rpcz
 
 
-def make_create_source_req(source_id=None, features=None):
+def make_create_source_req(source_id=None, name=None, features=None):
     features = features or []
     request = service_pb2.CreateSourceRequest()
     if source_id:
         request.source.source_id = source_id
+    if name:
+        request.source.name = name
     for f in features:
         new_feat = request.source.schema.features.add()
         new_feat.name = f['name']
@@ -91,13 +95,17 @@ class SaltfishTests(unittest.TestCase):
         cls._app = rpcz.Application()
         cls._channel = cls._app.create_rpc_channel(cls._config.bind_str)
         cls._service = service_rpcz.SourceManagerService_Stub(cls._channel)
-        cls._riakc = riak.RiakClient(protocol='pbc',
-                                     host=cls._config.riak.host,
-                                     pb_port=cls._config.riak.port)
-        cls._sqlc = mysql.connect(host=cls._config.maria_db.host,
-                                  user=cls._config.user,
-                                  password=cls._config.password,
-                                  database=cls._config.db)
+        cls._riakc = riak.RiakClient(
+            protocol='pbc',
+            host=cls._config.riak.host,
+            pb_port=cls._config.riak.port)
+        cls._sqlc = mysql.connector.connect(
+            host=cls._config.maria_db.host,
+            user=cls._config.maria_db.user,
+            password=cls._config.maria_db.password,
+            database=cls._config.maria_db.db,
+            use_unicode=True,
+            get_warnings=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -118,60 +126,69 @@ class SaltfishTests(unittest.TestCase):
         ]
 
     def try_create_source(self, request):
+        CreateSourceRequest = service_pb2.CreateSourceRequest
+        CreateSourceResponse = service_pb2.CreateSourceResponse
+        u_normalize = lambda s: unicodedata.normalize('NFC', s)
         try:
+            #cur = SaltfishTests._sqlc.cursor()
             response = self._service.create_source(request,
                                                    deadline_ms=DEFAULT_DEADLINE)
-            self.assertEqual(service_pb2.CreateSourceResponse.OK, response.status)
+            sys.exit(0)
+
+            self.assertEqual(CreateSourceResponse.OK, response.status)
             if request.source.source_id:
                 self.assertEqual(response.source_id, request.source.source_id)
+
             source_id = response.source_id
-            cur = SaltfishTester._sqlc.cursor()
             cur.execute(
                 'select source_id, user_id, `schema`, name, created'
-                'from sources where source_id = %s', (source_id, ))
+                ' from sources where source_id = %s', (source_id, ))
             rows = cur.fetchall()
             self.assertEqual(1, len(rows))
+            remote_user_id, remote_source_name = rows[0][1], rows[0][3]
+            remote_schema = source_pb2.Source()
+            remote_schema.ParseFromString(rows[0][2])
+            self.assertEqual(request.source.user_id, remote_user_id)
+            #import pdb; pdb.set_trace()
+            self.assertEqual(request.source.name, remote_source_name)
 
-            remote_data = self._riakc.get(obj)
-            assert remote_data.encoded_data is not None
-            remote_source = source_pb2.Source()
-            remote_source.ParseFromString(remote_data.encoded_data)
-            remote_schema = remote_source.schema
             remote_features = map(lambda x: {
                 'name': x.name,
                 'type': x.feature_type
             }, remote_schema.features)
-            assert remote_features == SaltfishTester.features
-            log_success(TEST_PASSED)
+            self.assertEqual(SaltfishTester.features,remote_features)
 
-            log.info('Sending a 2nd identical request to check idempotentcy (source_id=%s)'
-                     % source_id)
-            response = self._service.create_source(req, deadline_ms=DEFAULT_DEADLINE)
-            assert response.status == service_pb2.CreateSourceResponse.OK
-            log_success(TEST_PASSED)
+            log.info('Sending a 2nd identical request to check'
+                     'idempotentcy (source_id=%s)' % source_id)
+            response2 = self._service.create_source(request, deadline_ms=DEFAULT_DEADLINE)
+            self.assertEqual(CreateSourceResponse.OK, response2.status)
 
             log.info('Trying same id, but different schema. ' \
                      'Error expected (source_id=%s)' % source_id)
             features = deepcopy(SaltfishTester.features)
             features[1]['type'] = source_pb2.Feature.CATEGORICAL
-            req2 = make_create_source_req(source_id, features)
-            response = self._service.create_source(req2, deadline_ms=DEFAULT_DEADLINE)
-            assert response.status == service_pb2.CreateSourceResponse.SOURCE_ID_ALREADY_EXISTS
+            request3 = make_create_source_req(source_id, request.source.name, features)
+            response3 = self._service.create_source(request3,
+                                                    deadline_ms=DEFAULT_DEADLINE)
+            self.assertEqual(CreateSourceResponse.SOURCE_ID_ALREADY_EXISTS,
+                             response3.status)
             log.info('Got error message: "%s"' % response.msg)
-            log_success(TEST_PASSED)
         except rpcz.rpc.RpcDeadlineExceeded:
             log.error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
         except google.protobuf.message.DecodeError:
             log.error(FAILED_PREFIX + 'Could not parse the source schema @ (b=%s, k=%s))'
                       % (SOURCES_META_BUCKET, source_id))
-            sys.exit(1)
+            sys.exit(2)
 
     ### Test functions ###
-    @unittest.skip("")
     def test_create_source_with_given_id(self):
         source_id = uuid.uuid4()
-        request = make_create_source_req(source_id.get_bytes_le(), self.features)
+        #TODO: Modify test to use a unicode name
+        #source_name = ur"Some Test Source-123客\x00家話\\;"
+        #source_name = ur"Some Test Source-12\\;"
+        source_name = ur"話"
+        request = make_create_source_req(source_id.get_bytes(), source_name, self.features)
         log.info('Creating a new source with a given id (id=%s)..' % str(source_id))
         self.try_create_source(request)
 
@@ -217,7 +234,8 @@ class SaltfishTests(unittest.TestCase):
             assert remote_data.encoded_data is None
             log_success(TEST_PASSED)
 
-            log.info('Making a 2nd identical delete_source call to check idempotentcy (source_id=%s)' % source_id)
+            log.info('Making a 2nd identical delete_source call to check idempotentcy (source_id=%s)'
+                     % source_id)
             delete_response = self._service.delete_source(delete_request, deadline_ms=DEFAULT_DEADLINE)
             assert delete_response.status == service_pb2.DeleteSourceResponse.OK
             log_success(TEST_PASSED)
@@ -300,6 +318,7 @@ class SaltfishTests(unittest.TestCase):
             log.error(FAILED_PREFIX + 'Deadline exceeded! The service did not respond in time')
             sys.exit(1)
 
+    @unittest.skip("")
     def test_rabbitmq_publisher(self):
         request = service_pb2.CreateSourceRequest()
         for f in self.features:
@@ -309,11 +328,16 @@ class SaltfishTests(unittest.TestCase):
         response = self._service.create_source(request,
                                                deadline_ms=DEFAULT_DEADLINE)
 
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Muses server")
+    parser = argparse.ArgumentParser(
+        description="Saltfish Integration Tests")
     parser.add_argument('--conf', type=str, default=None, action='store',
                         help="Saltfish config file", metavar='FILE')
-    args = parser.parse_args()
-    if args.conf:
-        pass
-    unittest.main()
+    options, args = parser.parse_known_args()
+    if options.conf:
+        with open(options.conf, 'r') as conf_file:
+            config = config_pb2.Saltfish()
+            google.protobuf.text_format.Merge(conf_file.read(), config)
+            SaltfishTests._config = config
+    unittest.main(argv=sys.argv[:1] + args)

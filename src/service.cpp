@@ -142,36 +142,25 @@ inline boost::uuids::uuid from_string(const string& s) {
 SaltfishServiceImpl::SaltfishServiceImpl(
     RiakProxy& riak_proxy,
     sql::ConnectionPool& sql_pool,
+    boost::asio::io_service& ios,
     uint32_t max_generate_id_count,
-    const string& sources_data_bucket_prefix,
-    const string& sources_metadata_bucket)
+    const string& sources_data_bucket_prefix)
     : riak_proxy_(riak_proxy),
       sql_pool_(sql_pool),
+      ios_(ios),
       uuid_generator_(),
       uniform_distribution_(init_uniform_distribution()),
       max_generate_id_count_(max_generate_id_count),
-      sources_metadata_bucket_(sources_metadata_bucket),
       sources_data_bucket_prefix_(sources_data_bucket_prefix) {
 }
 
-void SaltfishServiceImpl::register_listener(
-    RequestType req_type, Listener&& listener) {
-  listens_to_.emplace_back(req_type);
-  listeners_.emplace_back(listener);
-  CHECK_EQ(listens_to_.size(), listeners_.size())
-      << "Invalid mapping between request types and handlers";
-}
-
-void SaltfishServiceImpl::call_listeners(
-    RequestType request_type, const string& request) {
-  CHECK_EQ(listens_to_.size(), listeners_.size())
-      << "Invalid mapping between request types and handlers";
-  auto listener = listeners_.cbegin();
-  for (auto listen = listens_to_.cbegin();
-       listen != listens_to_.cend();
-       ++listen, ++listener) {
-    if(*listen == request_type || *listen == RequestType::ALL) {
-      (*listener)(*listen, request);
+void SaltfishServiceImpl::async_call_listeners(
+    RequestType req_type, const string& request) {
+  for (auto& listener : listeners_) {
+    if(listener.listens_to == req_type ||
+       listener.listens_to == RequestType::ALL) {
+      auto handler = bind(listener.handler, listener.listens_to, request);
+      listener.strand.post(handler);
     }
   }
 }
@@ -255,7 +244,7 @@ void SaltfishServiceImpl::create_source(
     reply_with_status(CreateSourceResponse::INVALID_SOURCE_ID, reply);
     return;
   }
-  call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
+  async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
 
   auto handler = bind(&SaltfishServiceImpl::create_source_handler,
                       this, source_id, request, reply, _1,  _2,  _3);
@@ -266,12 +255,24 @@ void SaltfishServiceImpl::create_source(
 
   try {
     mysqlpp::ScopedConnection conn(sql_pool_, true);
+
+    // mysqlpp::Query query2 = conn->query();
+    // query2<<"SET NAMES 'utf8'";
+    // query2.execute();
+
     mysqlpp::Query query(conn->query(CREATE_SOURCE_TEMPLATE));
     query.parse();
+    LOG(INFO) << source.name().size() << " " << source.name();
     query.execute(source_id,
                   source.user_id(),
                   source.schema().SerializeAsString(),
                   source.name());
+    query.reset();
+    query << "select name from sources where source_id=%0q";
+    query.parse();
+    mysqlpp::StoreQueryResult res = query.store(source_id);
+    LOG(INFO) << res.num_rows() << " " << res[0][0].size() << " " << res[0][0];
+
     CreateSourceResponse response;
     response.set_status(CreateSourceResponse::OK);
     response.set_source_id(source_id);
@@ -306,9 +307,9 @@ void SaltfishServiceImpl::delete_source(
     return;
   };
 
-  riak_proxy_.delete_object(sources_metadata_bucket_,
-                            request.source_id(),
-                            handler);
+  // riak_proxy_.delete_object(sources_metadata_bucket_,
+  //                           request.source_id(),
+  //                           handler);
 }
 
 /***********                       generate_id                      ***********/
@@ -521,7 +522,7 @@ void SaltfishServiceImpl::put_records(
 
   auto handler = bind(&SaltfishServiceImpl::put_records_check_handler,
                       this, request, reply, _1, _2, _3);
-  riak_proxy_.get_object(sources_metadata_bucket_, request.source_id(), handler);
+  // riak_proxy_.get_object(sources_metadata_bucket_, request.source_id(), handler);
 }
 
 }}  // namespace reinferio::saltfish
