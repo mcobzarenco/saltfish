@@ -1,41 +1,33 @@
 #ifndef REINFERIO_SALTFISH_SQL_POOL_HPP
 #define REINFERIO_SALTFISH_SQL_POOL_HPP
 
-#define MYSQLPP_MYSQL_HEADERS_BURIED
-#include <mysql++/mysql++.h>
-
+#include <memory>
+#include <mutex>
 #include <string>
 
 
-namespace reinferio {
-namespace saltfish {
 namespace sql {
+class Driver;
+class Connection;
+}
 
-// TODO: Implement our own connection pool
-// Do not use the abstract base class as it does old style C++ evil things
-class ConnectionPool : public mysqlpp::ConnectionPool {
- public:
-  ConnectionPool(const std::string& host, const std::string& db,
-                 const std::string& user, const std::string& password);
-  ~ConnectionPool();
+namespace reinferio { namespace saltfish { namespace sql {
 
-  ConnectionPool(const ConnectionPool&) = delete;
-  ConnectionPool& operator=(const ConnectionPool&) = delete;
+class ConnectionFactory {
+  public:
+    ConnectionFactory(const std::string& host, const std::string& user,
+                      const std::string& pass, const std::string& db);
 
- protected:
-  mysqlpp::Connection* create() override;
-  void destroy(mysqlpp::Connection* conn) override;
-  unsigned int max_idle_time() override;
-
- private:
-  const std::string host_;
-  const std::string db_;
-  const std::string user_;
-  const std::string password_;
+    std::unique_ptr<::sql::Connection> new_connection();
+  private:
+    std::mutex driver_mutex_;
+    ::sql::Driver* driver_;
+    const std::string host_;
+    const std::string user_;
+    const std::string pass_;
+    const std::string db_;
 };
 
-}  // namespace sql
-}  // namespace saltfish
-}  // namespace reinferio
+}}}  // namespace reinferio::saltfish::sql
 
 #endif  // REINFERIO_SALTFISH_SQL_POOL_HPP

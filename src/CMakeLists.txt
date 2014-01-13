@@ -48,8 +48,8 @@ add_library(
 )
 target_link_libraries(
   sql_pool
-    mysqlpp
     mysqlclient
+    mysqlcppconn
 )
 
 add_library(

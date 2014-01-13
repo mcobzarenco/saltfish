@@ -41,7 +41,7 @@ class SaltfishServiceImpl : public SaltfishService {
  public:
   SaltfishServiceImpl(
       RiakProxy& riak_proxy,
-      sql::ConnectionPool& sql_pool,
+      sql::ConnectionFactory& sql_factory,
       boost::asio::io_service& ios,
       uint32_t max_generate_id_count,
       const std::string& sources_data_bucket_prefix);
@@ -92,7 +92,7 @@ class SaltfishServiceImpl : public SaltfishService {
                                  riak::value_updater& update_value);
 
   RiakProxy& riak_proxy_;
-  sql::ConnectionPool& sql_pool_;
+  sql::ConnectionFactory& sql_factory_;
   boost::asio::io_service& ios_;
 
   boost::uuids::random_generator uuid_generator_;

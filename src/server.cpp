@@ -18,8 +18,8 @@ SaltfishServer::SaltfishServer(const config::Saltfish& config)
       ios_(), work_(new boost::asio::io_service::work(ios_)),
       application_(), server_(application_),
       riak_proxy_(config.riak().host(), config.riak().port(), ios_),
-      sql_pool_(config.maria_db().host(), config.maria_db().db(),
-                config.maria_db().user(), config.maria_db().password()),
+      sql_factory_(config.maria_db().host(), config.maria_db().user(),
+                   config.maria_db().password(), config.maria_db().db()),
       rabbit_pub_(config.rabbit_mq().host(), config.rabbit_mq().port(),
                   config.rabbit_mq().user(), config.rabbit_mq().password()) {
   for(int i = 0; i < 5; ++i) {
@@ -46,7 +46,7 @@ SaltfishServer::~SaltfishServer() noexcept {
 void SaltfishServer::run() noexcept {
   try {
     saltfish::SaltfishServiceImpl saltfish_serv(
-        riak_proxy_, sql_pool_, ios_,
+        riak_proxy_, sql_factory_, ios_,
         config_.max_generate_id_count(),
         config_.sources_data_bucket_prefix());
     auto rmq_listener = bind(&RabbitPublisher::publish, &rabbit_pub_, _1, _2);

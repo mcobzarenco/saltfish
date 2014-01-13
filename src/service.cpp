@@ -1,5 +1,4 @@
 #define BOOST_BIND_NO_PLACEHOLDERS
-
 #include "service.hpp"
 
 #include "riak_proxy.hpp"
@@ -9,6 +8,12 @@
 #include <glog/logging.h>
 #include <boost/uuid/uuid_io.hpp>
 
+#include <cppconn/exception.h>
+#include <cppconn/statement.h>
+#include <cppconn/prepared_statement.h>
+#include <mysql_driver.h>
+#include <mysql_connection.h>
+
 #include <thread>
 #include <sstream>
 #include <set>
@@ -16,14 +21,12 @@
 #include <random>
 
 
-namespace reinferio {
-namespace saltfish {
+namespace reinferio { namespace saltfish {
 
 using namespace std;
 using namespace std::placeholders;
 
 //  Error messages:
-
 constexpr char UNKNOWN_ERROR_MESSAGE[] =
     "Unknown error status: must likely using protobufs with mismatched versions.";
 constexpr char NETWORK_ERROR_MESSAGE[] =
@@ -141,12 +144,12 @@ inline boost::uuids::uuid from_string(const string& s) {
 
 SaltfishServiceImpl::SaltfishServiceImpl(
     RiakProxy& riak_proxy,
-    sql::ConnectionPool& sql_pool,
+    sql::ConnectionFactory& sql_factory,
     boost::asio::io_service& ios,
     uint32_t max_generate_id_count,
     const string& sources_data_bucket_prefix)
     : riak_proxy_(riak_proxy),
-      sql_pool_(sql_pool),
+      sql_factory_(sql_factory),
       ios_(ios),
       uuid_generator_(),
       uniform_distribution_(init_uniform_distribution()),
@@ -164,7 +167,6 @@ void SaltfishServiceImpl::async_call_listeners(
     }
   }
 }
-
 
 /***********                      create_source                     ***********/
 
@@ -222,9 +224,12 @@ void SaltfishServiceImpl::create_source_handler(
 void SaltfishServiceImpl::create_source(
     const CreateSourceRequest& request,
     rpcz::reply<CreateSourceResponse> reply) {
+  static constexpr char GET_SOURCE_TEMPLATE[] =
+      "SELECT source_id, user_id, source_schema, name FROM sources"
+      " WHERE source_id = ?";
   static constexpr char CREATE_SOURCE_TEMPLATE[] =
-      "INSERT INTO sources (source_id, user_id, `schema`, name) "
-      "VALUES (%0q:source_id, %1q:user_id, %2q:schema, %3q:name)";
+      "INSERT INTO sources (source_id, user_id, source_schema, name) "
+      "VALUES (?, ?, ?, ?)";
 
   const auto& source = request.source();
   if (schema_has_duplicates(source.schema())) {
@@ -233,18 +238,19 @@ void SaltfishServiceImpl::create_source(
   }
 
   string source_id;
+  bool new_source_id{false};
   if (source.source_id().size() == boost::uuids::uuid::static_size()) {
     source_id = source.source_id();
   } else if (source.source_id().empty()) {
     LOG(INFO) << "create_source() request source_id not set, generating one" ;
     boost::uuids::uuid uuid = generate_uuid();
     source_id.assign(uuid.begin(), uuid.end());
+    new_source_id = true;
   } else {
     LOG(INFO) << "create_source() invalid source_id";
     reply_with_status(CreateSourceResponse::INVALID_SOURCE_ID, reply);
     return;
   }
-  async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
 
   auto handler = bind(&SaltfishServiceImpl::create_source_handler,
                       this, source_id, request, reply, _1,  _2,  _3);
@@ -254,35 +260,56 @@ void SaltfishServiceImpl::create_source(
   // riak_proxy_.get_object(sources_metadata_bucket_, source_id, handler);
 
   try {
-    mysqlpp::ScopedConnection conn(sql_pool_, true);
+    auto conn = sql_factory_.new_connection();
 
-    // mysqlpp::Query query2 = conn->query();
-    // query2<<"SET NAMES 'utf8'";
-    // query2.execute();
+    if (!new_source_id) {
+      unique_ptr<::sql::PreparedStatement> get_query{
+        conn->prepareStatement(GET_SOURCE_TEMPLATE)};
+      get_query->setString(1, source_id);
+      get_query->execute();
+      unique_ptr<::sql::ResultSet> res{get_query->executeQuery()};
+      if (res->rowsCount() > 0) {
+        CHECK(res->rowsCount() == 1)
+            << "Integrity constraint violated, source_id is a primary key";
+        res->next();
+        LOG(INFO) << "source_id already exists";
+        if (request.source().schema().SerializeAsString() ==
+            res->getString("source_schema")) {
+          // Trying to create a source that already exists with identical schema
+          // Nothing to do - such that the call is idempotent
+          CreateSourceResponse response;
+          response.set_status(CreateSourceResponse::OK);
+          response.set_source_id(source_id);
+          reply.send(response);
+          return;
+        } else {
+          LOG(INFO) << "A source with the same id, but different schema "
+                    << "already exists (source_id="
+                    << boost::uuids::to_string(from_string(source_id)) << ")";
+          reply_with_status(CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
+          return;
+        }
+      }
+    }
+    unique_ptr<::sql::PreparedStatement> query{
+      conn->prepareStatement(CREATE_SOURCE_TEMPLATE)};
 
-    mysqlpp::Query query(conn->query(CREATE_SOURCE_TEMPLATE));
-    query.parse();
     LOG(INFO) << source.name().size() << " " << source.name();
-    query.execute(source_id,
-                  source.user_id(),
-                  source.schema().SerializeAsString(),
-                  source.name());
-    query.reset();
-    query << "select name from sources where source_id=%0q";
-    query.parse();
-    mysqlpp::StoreQueryResult res = query.store(source_id);
-    LOG(INFO) << res.num_rows() << " " << res[0][0].size() << " " << res[0][0];
+    query->setString(1, source_id);
+    query->setInt(2, source.user_id());
+    query->setString(3, source.schema().SerializeAsString());
+    query->setString(4, source.name());
+    query->execute();
+
+    async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
 
     CreateSourceResponse response;
     response.set_status(CreateSourceResponse::OK);
     response.set_source_id(source_id);
     reply.send(response);
-  } catch (const mysqlpp::BadQuery& e) {
+  } catch (const ::sql::SQLException& e) {
     LOG(ERROR) << "create_source() query error: " << e.what();
     reply_with_status(CreateSourceResponse::UNKNOWN_ERROR, reply);
-  } catch (const mysqlpp::Exception& e) {
-    LOG(ERROR) << "create_source() MariaDB connection error: " << e.what();
-    reply_with_status(CreateSourceResponse::NETWORK_ERROR, reply);
   }
 }
 
@@ -454,49 +481,6 @@ void SaltfishServiceImpl::put_records_check_handler(
     reply_with_status(PutRecordsResponse::NETWORK_ERROR, reply);
   }
 }
-
-/*
-void put_handler(const PutRecordsRequest& request,
-		 rpcz::reply<saltfish::PutRecordsResponse> reply,
-		 const std::error_code& error,
-		 std::shared_ptr<riak::object> object,
-		 riak::value_updater& update_value) {
-  if(!error) {
-    if (object)
-      LOG(INFO) << "Fetch succeeded! Value is: " << object->value();
-    else
-      LOG(INFO) << "Fetch succeeded! No value found.";
-
-    PutRecordsResponse response;
-    response.set_status(PutRecordsResponse::OK);
-    reply.send(response);
-
-    rio::source::FeatureSchema ft;
-    ft.set_name("feat");
-    ft.set_feature_type(rio::source::FeatureSchema::CATEGORICAL);
-
-    auto row = request.source_row();
-    // std::cout<< "byte size = " << row.ByteSize() << std::endl;
-
-    // std::cout << "Putting new value: " << s << std::endl;
-    auto new_key = std::make_shared<riak::object>();
-    row.SerializeToString(new_key->mutable_value());
-    riak::rpair *index = new_key->add_indexes();
-    index->set_key("someindex_bin");
-    index->set_value("1");
-    riak::put_response_handler put_handler = std::bind(&handle_put_result, response, std::placeholders::_1);
-    update_value(new_key, put_handler);
-  } else {
-    LOG(ERROR) << "Could not receive the object from Riak due to a network or server error.";
-    PutRecordsResponse response;
-    response.set_status(PutRecordsResponse::ERROR);
-    response.set_msg("Could not connect to the storage backend");
-    reply.send(response);
-  }
-  return;
-}
-*/
-
 
 void SaltfishServiceImpl::put_records(
     const PutRecordsRequest& request,

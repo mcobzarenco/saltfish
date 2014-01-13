@@ -48,7 +48,7 @@ class SaltfishServer {
   rpcz::application application_;
   rpcz::server server_;
   RiakProxy riak_proxy_;
-  sql::ConnectionPool sql_pool_;
+  sql::ConnectionFactory sql_factory_;
   RabbitPublisher rabbit_pub_;
 };
 
