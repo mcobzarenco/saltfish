@@ -35,7 +35,8 @@ message DeleteSourceResponse {
   enum Status {
     UNKNOWN_ERROR = 0;
     OK = 1;
-    NETWORK_ERROR = 2;
+    INVALID_SOURCE_ID = 2;
+    NETWORK_ERROR = 3;
   }
   optional Status status = 1;
   optional string msg = 2;

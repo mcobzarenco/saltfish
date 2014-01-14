@@ -79,12 +79,6 @@ class SaltfishServiceImpl : public SaltfishService {
   inline int64_t generate_random_index();
   inline uuid_t generate_uuid();
 
-  void create_source_handler(const std::string& source_id,
-                             const CreateSourceRequest& request,
-                             rpcz::reply<CreateSourceResponse> reply,
-                             const std::error_code& error,
-                             std::shared_ptr<riak::object> object,
-                             riak::value_updater& update_value);
   void put_records_check_handler(const PutRecordsRequest& request,
                                  rpcz::reply<PutRecordsResponse> reply,
                                  const std::error_code& error,

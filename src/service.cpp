@@ -7,6 +7,7 @@
 #include <riak/client.hxx>
 #include <glog/logging.h>
 #include <boost/uuid/uuid_io.hpp>
+#include <boost/optional.hpp>
 
 #include <cppconn/exception.h>
 #include <cppconn/statement.h>
@@ -91,6 +92,8 @@ inline void reply_with_status(
       make_error_messages<DeleteSourceResponse>({
           {DeleteSourceResponse::UNKNOWN_ERROR, UNKNOWN_ERROR_MESSAGE},
           {DeleteSourceResponse::OK, ""},
+          {DeleteSourceResponse::INVALID_SOURCE_ID,
+                "The source id provided is invalid"},
           {DeleteSourceResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
         });
   if(message != nullptr)
@@ -139,6 +142,27 @@ inline boost::uuids::uuid from_string(const string& s) {
   copy(s.begin(), s.end(), uuid.begin());
   return uuid;
 }
+
+boost::optional<string> sql_fetch_source_schema(
+    ::sql::Connection* conn, const string& source_id) {
+  static constexpr char GET_SOURCE_TEMPLATE[] =
+      "SELECT source_id, user_id, source_schema, name FROM sources "
+      "WHERE source_id = ?";
+  unique_ptr< ::sql::PreparedStatement > get_query{
+    conn->prepareStatement(GET_SOURCE_TEMPLATE)};
+  get_query->setString(1, source_id);
+  get_query->execute();
+  unique_ptr< ::sql::ResultSet > res{get_query->executeQuery()};
+  if (res->rowsCount() > 0) {
+    CHECK(res->rowsCount() == 1)
+        << "Integrity constraint violated, source_id is a primary key";
+    LOG(INFO) << "source_id already exists";
+    res->next();
+    return boost::optional<string>{res->getString("source_schema")};
+  }
+  return boost::optional<string>();
+}
+
 } //  anonymous namespace
 
 
@@ -170,63 +194,9 @@ void SaltfishServiceImpl::async_call_listeners(
 
 /***********                      create_source                     ***********/
 
-void SaltfishServiceImpl::create_source_handler(
-    const string& source_id,
-    const CreateSourceRequest& request,
-    rpcz::reply<CreateSourceResponse> reply,
-    const std::error_code& error,
-    std::shared_ptr<riak::object> object,
-    riak::value_updater& update_value) {
-  if (!error) {
-    if (object) {  // There's already a source with the same id
-      // TODO(cristicbz): Extract to functions that check equality & equivalence
-      // of protobufs.
-      if (request.source().SerializeAsString() == object->value()) {
-        // Trying to create a source that already exists with identical schema
-        // Nothing to do - such that the call is idempotent
-        CreateSourceResponse response;
-        response.set_status(CreateSourceResponse::OK);
-        response.set_source_id(source_id);
-        reply.send(response);
-      } else {
-        LOG(INFO) << "A source with the same id, but different schema "
-                  << "already exists (source_id=" << source_id << ")";
-        reply_with_status(CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
-      }
-    } else {
-      auto new_value = std::make_shared<riak::object>();
-      request.source().SerializeToString(new_value->mutable_value());
-      riak::put_response_handler handler =
-        [source_id, reply](const std::error_code& error) mutable {
-        if (!error) {
-          VLOG(0) << "Successfully created source (id=" << source_id << ")";
-          CreateSourceResponse response;
-          response.set_status(CreateSourceResponse::OK);
-          response.set_source_id(source_id);
-          reply.send(response);
-        } else {
-          LOG(ERROR) << "Could not receive the object from Riak due to a network "
-          << "or server error: " << error;
-          reply_with_status(CreateSourceResponse::NETWORK_ERROR, reply);
-        }
-      };
-
-      // std::bind(&create_source_put_handler, source_id, reply, _1);
-      update_value(new_value, handler);
-    }
-  } else {
-    LOG(ERROR) << "Could not receive the object from Riak due to a network or "
-               << "server error: " << error;
-    reply_with_status(CreateSourceResponse::NETWORK_ERROR, reply);
-  }
-}
-
 void SaltfishServiceImpl::create_source(
     const CreateSourceRequest& request,
     rpcz::reply<CreateSourceResponse> reply) {
-  static constexpr char GET_SOURCE_TEMPLATE[] =
-      "SELECT source_id, user_id, source_schema, name FROM sources"
-      " WHERE source_id = ?";
   static constexpr char CREATE_SOURCE_TEMPLATE[] =
       "INSERT INTO sources (source_id, user_id, source_schema, name) "
       "VALUES (?, ?, ?, ?)";
@@ -252,29 +222,17 @@ void SaltfishServiceImpl::create_source(
     return;
   }
 
-  auto handler = bind(&SaltfishServiceImpl::create_source_handler,
-                      this, source_id, request, reply, _1,  _2,  _3);
   LOG(INFO) << "create_source() inserting source (id="
             << boost::uuids::to_string(from_string(source_id))
             << ", schema='" << source.schema().ShortDebugString() << "')";
-  // riak_proxy_.get_object(sources_metadata_bucket_, source_id, handler);
-
   try {
     auto conn = sql_factory_.new_connection();
 
     if (!new_source_id) {
-      unique_ptr< ::sql::PreparedStatement > get_query{
-        conn->prepareStatement(GET_SOURCE_TEMPLATE)};
-      get_query->setString(1, source_id);
-      get_query->execute();
-      unique_ptr< ::sql::ResultSet > res{get_query->executeQuery()};
-      if (res->rowsCount() > 0) {
-        CHECK(res->rowsCount() == 1)
-            << "Integrity constraint violated, source_id is a primary key";
-        res->next();
-        LOG(INFO) << "source_id already exists";
-        if (request.source().schema().SerializeAsString() ==
-            res->getString("source_schema")) {
+      boost::optional<string> remote_schema =
+          sql_fetch_source_schema(conn.get(), source_id);
+      if (remote_schema) {
+        if (*remote_schema == request.source().schema().SerializeAsString()) {
           // Trying to create a source that already exists with identical schema
           // Nothing to do - such that the call is idempotent
           CreateSourceResponse response;
@@ -299,7 +257,7 @@ void SaltfishServiceImpl::create_source(
     query->setInt(2, source.user_id());
     query->setString(3, source.schema().SerializeAsString());
     query->setString(4, source.name());
-    query->execute();
+    query->executeUpdate();
 
     async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
 
@@ -315,28 +273,35 @@ void SaltfishServiceImpl::create_source(
 
 /***********                      delete_source                     ***********/
 
+// TODO: Make sure the actual data is deleted by some job later
 void SaltfishServiceImpl::delete_source(
     const DeleteSourceRequest& request,
     rpcz::reply<DeleteSourceResponse> reply) {
-  // TODO: Make sure the actual data is deleted by some job later
+  static constexpr char DELETE_SOURCE_TEMPLATE[] =
+      "DELETE FROM sources WHERE source_id = ?";
+
   const string& source_id = request.source_id();
-  VLOG(0) << "delete_source(source_id=" << source_id << ")";
+  if (source_id.size() == boost::uuids::uuid::static_size()) {
+    VLOG(0) << "delete_source(source_id="
+            << boost::uuids::to_string(from_string(source_id)) << ")";
+    try {
+      auto conn = sql_factory_.new_connection();
+      unique_ptr< ::sql::PreparedStatement > query{
+        conn->prepareStatement(DELETE_SOURCE_TEMPLATE)};
 
-  riak::put_response_handler handler =
-      [source_id, reply](const std::error_code& error) mutable {
-    if(!error) {
-      VLOG(0) << "Source deleted successfully (id=" << source_id << ")";
+      query->setString(1, source_id);
+      LOG(INFO) << "#rows updated=" << query->executeUpdate();
+
+      async_call_listeners(RequestType::DELETE_SOURCE, request.SerializeAsString());
       reply_with_status(DeleteSourceResponse::OK, reply);
-    } else {
-      LOG(INFO) << "Deletion failed: " << error;
-      reply_with_status(DeleteSourceResponse::NETWORK_ERROR, reply);
+    } catch (const ::sql::SQLException& e) {
+      LOG(ERROR) << "delete_source() query error: " << e.what();
+      reply_with_status(DeleteSourceResponse::UNKNOWN_ERROR, reply);
     }
-    return;
-  };
-
-  // riak_proxy_.delete_object(sources_metadata_bucket_,
-  //                           request.source_id(),
-  //                           handler);
+  } else {
+    LOG(INFO) << "delete_source() with invalid source_id";
+    reply_with_status(DeleteSourceResponse::INVALID_SOURCE_ID, reply);
+  }
 }
 
 /***********                       generate_id                      ***********/
