@@ -18,9 +18,9 @@ ConnectionFactory::ConnectionFactory(
                user_{user}, pass_{pass}, db_{db} {
 }
 
-unique_ptr<::sql::Connection> ConnectionFactory::new_connection() {
+unique_ptr< ::sql::Connection > ConnectionFactory::new_connection() {
   lock_guard<mutex> guard{driver_mutex_};
-  unique_ptr<::sql::Connection> conn{ driver_->connect(host_, user_, pass_) };
+  unique_ptr< ::sql::Connection > conn{ driver_->connect(host_, user_, pass_) };
   conn->setSchema(db_);
   return move(conn);
 }

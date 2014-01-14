@@ -18,7 +18,7 @@ class ConnectionFactory {
     ConnectionFactory(const std::string& host, const std::string& user,
                       const std::string& pass, const std::string& db);
 
-    std::unique_ptr<::sql::Connection> new_connection();
+    std::unique_ptr< ::sql::Connection > new_connection();
   private:
     std::mutex driver_mutex_;
     ::sql::Driver* driver_;

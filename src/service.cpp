@@ -263,11 +263,11 @@ void SaltfishServiceImpl::create_source(
     auto conn = sql_factory_.new_connection();
 
     if (!new_source_id) {
-      unique_ptr<::sql::PreparedStatement> get_query{
+      unique_ptr< ::sql::PreparedStatement > get_query{
         conn->prepareStatement(GET_SOURCE_TEMPLATE)};
       get_query->setString(1, source_id);
       get_query->execute();
-      unique_ptr<::sql::ResultSet> res{get_query->executeQuery()};
+      unique_ptr< ::sql::ResultSet > res{get_query->executeQuery()};
       if (res->rowsCount() > 0) {
         CHECK(res->rowsCount() == 1)
             << "Integrity constraint violated, source_id is a primary key";
@@ -291,7 +291,7 @@ void SaltfishServiceImpl::create_source(
         }
       }
     }
-    unique_ptr<::sql::PreparedStatement> query{
+    unique_ptr< ::sql::PreparedStatement > query{
       conn->prepareStatement(CREATE_SOURCE_TEMPLATE)};
 
     LOG(INFO) << source.name().size() << " " << source.name();
