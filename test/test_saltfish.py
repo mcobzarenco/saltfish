@@ -180,18 +180,17 @@ class SaltfishTests(unittest.TestCase):
     ### Test functions ###
     def test_create_source_with_given_id(self):
         source_id = uuid.uuid4()
-        #TODO: Modify test to use a unicode name
-        #source_name = ur"Some Test Source-123客\x00家話\\;"
-        #source_name = ur"Some Test Source-12\\;"
-        source_name = u"話"
-        request = make_create_source_req(source_id.get_bytes(), source_name, self.features)
+        source_name = ur"Some Test Source-123客\x00家話\\;"
+        request = make_create_source_req(source_id.get_bytes(),
+                                         source_name, self.features)
         log.info('Creating a new source with a given id (id=%s)..' % str(source_id))
         self.try_create_source(request)
 
-    @unittest.skip("")
     def test_create_source_with_no_id(self):
+        source_name = u"Some Other Source 客家話 -- £$"
+        request = make_create_source_req(name=source_name, features=self.features)
         log.info('Creating a new source without setting the id..')
-        self.try_create_source()
+        self.try_create_source(request)
 
     @unittest.skip("")
     def test_create_source_duplicate_feature_name(self):
