@@ -141,13 +141,13 @@ SaltfishServiceImpl::SaltfishServiceImpl(
     boost::asio::io_service& ios,
     uint32_t max_generate_id_count,
     const string& sources_data_bucket_prefix)
-    : riak_proxy_{riak_proxy},
-      sql_factory_{sql_factory},
-      ios_{ios},
-      uuid_generator_{},
-      uniform_distribution_{init_uniform_distribution()},
-      max_generate_id_count_{max_generate_id_count},
-      sources_data_bucket_prefix_{sources_data_bucket_prefix} {
+    : riak_proxy_(riak_proxy),
+      sql_factory_(sql_factory),
+      ios_(ios),
+      uuid_generator_(),
+      uniform_distribution_(init_uniform_distribution()),
+      max_generate_id_count_(max_generate_id_count),
+      sources_data_bucket_prefix_(sources_data_bucket_prefix) {
 }
 
 void SaltfishServiceImpl::async_call_listeners(
@@ -195,7 +195,6 @@ void SaltfishServiceImpl::create_source(
             << ", schema='" << source.schema().ShortDebugString() << "')";
   try {
     auto conn = sql_factory_.new_connection();
-
     if (!new_source_id) {
       boost::optional<string> remote_schema =
           sql::fetch_source_schema(conn.get(), source_id);
@@ -219,8 +218,6 @@ void SaltfishServiceImpl::create_source(
     }
     unique_ptr< ::sql::PreparedStatement > query{
       conn->prepareStatement(CREATE_SOURCE_TEMPLATE)};
-
-    LOG(INFO) << source.name().size() << " " << source.name();
     query->setString(1, source_id);
     query->setInt(2, source.user_id());
     query->setString(3, source.schema().SerializeAsString());
@@ -228,7 +225,6 @@ void SaltfishServiceImpl::create_source(
     query->executeUpdate();
 
     async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
-
     CreateSourceResponse response;
     response.set_status(CreateSourceResponse::OK);
     response.set_source_id(source_id);
@@ -344,12 +340,11 @@ void put_records_get_handler(const source::Record& record,
 
 }  // namespace
 
-
 void SaltfishServiceImpl::put_records(
     const PutRecordsRequest& request,
     rpcz::reply<PutRecordsResponse> reply) {
   uint32_t n_records = request.records_size();
-  if (!is_valid_uuid(request.source_id())) {
+  if (!is_valid_uuid_bytes(request.source_id())) {
     VLOG(0) << "Got put_records request with an invalid source id";
     reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
                       "The source id provided is invalid.");

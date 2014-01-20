@@ -13,7 +13,6 @@
 
 using namespace std;
 
-
 namespace reinferio {
 namespace saltfish {
 

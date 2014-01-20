@@ -26,12 +26,12 @@
 namespace reinferio {
 namespace saltfish {
 
-inline bool is_valid_uuid(const std::string& id) {
+inline bool is_valid_uuid_bytes(const std::string& id) {
   return boost::uuids::uuid::static_size() == id.size();
 }
 
 inline boost::uuids::uuid from_string(const std::string& s) {
-  CHECK(is_valid_uuid(s))
+  CHECK(is_valid_uuid_bytes(s))
       << "a uuid has exactly " << boost::uuids::uuid::static_size() << " bytes";
   boost::uuids::uuid uuid;
   copy(s.begin(), s.end(), uuid.begin());

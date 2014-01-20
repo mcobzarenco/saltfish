@@ -9,7 +9,6 @@ find_package(ProtobufPlugin REQUIRED)
 protobuf_generate_cpp(CONFIG_PB_SRCS CONFIG_PB_HDRS proto/config.proto)
 set(CONFIG_PB ${CONFIG_PB_SRCS} ${CONFIG_PB_HDRS})
 
-
 protobuf_generate_cpp(SOURCE_PB_SRCS SOURCE_PB_HDRS proto/source.proto)
 set(SOURCE_PB ${SOURCE_PB_SRCS} ${SOURCE_PB_HDRS})
 
@@ -99,6 +98,8 @@ add_executable(
   saltfish
     main.cpp
     server.hpp
+    saltfish_config.hpp
+    ${CONFIG_PB}
 )
 target_link_libraries(
   saltfish
