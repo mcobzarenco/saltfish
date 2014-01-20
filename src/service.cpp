@@ -1,6 +1,5 @@
 #define BOOST_BIND_NO_PLACEHOLDERS
 #include "service.hpp"
-
 #include "riak_proxy.hpp"
 #include "service_utils.hpp"
 
@@ -116,8 +115,6 @@ inline void reply_with_status(
           {PutRecordsResponse::INVALID_SOURCE_ID, "Invalid source id."},
           {PutRecordsResponse::NO_RECORDS_IN_REQUEST,
                 "No records in the request."},
-          {PutRecordsResponse::WRONG_NUMBER_OF_IDS,
-                "The number of records ids does not match the number of records"},
           {PutRecordsResponse::INVALID_RECORD, "Invalid record"},
           {PutRecordsResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
         });
@@ -128,39 +125,11 @@ inline void reply_with_status(
 }
 
 inline std::function<int64_t()> init_uniform_distribution() noexcept {
-  unsigned int seed = chrono::system_clock::now().time_since_epoch().count();
-  default_random_engine generator(seed);
-  uniform_int_distribution<int64_t> distribution(
-      numeric_limits<int64_t>::min(), numeric_limits<int64_t>::max());
+  long seed{chrono::system_clock::now().time_since_epoch().count()};
+  default_random_engine generator{seed};
+  uniform_int_distribution<int64_t> distribution{
+    numeric_limits<int64_t>::min(), numeric_limits<int64_t>::max()};
   return bind(distribution, generator);
-}
-
-inline boost::uuids::uuid from_string(const string& s) {
-  CHECK_EQ(boost::uuids::uuid::static_size(), s.size())
-      << "a uuid has exactly " << boost::uuids::uuid::static_size() << " bytes";
-  boost::uuids::uuid uuid;
-  copy(s.begin(), s.end(), uuid.begin());
-  return uuid;
-}
-
-boost::optional<string> sql_fetch_source_schema(
-    ::sql::Connection* conn, const string& source_id) {
-  static constexpr char GET_SOURCE_TEMPLATE[] =
-      "SELECT source_id, user_id, source_schema, name FROM sources "
-      "WHERE source_id = ?";
-  unique_ptr< ::sql::PreparedStatement > get_query{
-    conn->prepareStatement(GET_SOURCE_TEMPLATE)};
-  get_query->setString(1, source_id);
-  get_query->execute();
-  unique_ptr< ::sql::ResultSet > res{get_query->executeQuery()};
-  if (res->rowsCount() > 0) {
-    CHECK(res->rowsCount() == 1)
-        << "Integrity constraint violated, source_id is a primary key";
-    LOG(INFO) << "source_id already exists";
-    res->next();
-    return boost::optional<string>{res->getString("source_schema")};
-  }
-  return boost::optional<string>();
 }
 
 } //  anonymous namespace
@@ -172,13 +141,13 @@ SaltfishServiceImpl::SaltfishServiceImpl(
     boost::asio::io_service& ios,
     uint32_t max_generate_id_count,
     const string& sources_data_bucket_prefix)
-    : riak_proxy_(riak_proxy),
-      sql_factory_(sql_factory),
-      ios_(ios),
-      uuid_generator_(),
-      uniform_distribution_(init_uniform_distribution()),
-      max_generate_id_count_(max_generate_id_count),
-      sources_data_bucket_prefix_(sources_data_bucket_prefix) {
+    : riak_proxy_{riak_proxy},
+      sql_factory_{sql_factory},
+      ios_{ios},
+      uuid_generator_{},
+      uniform_distribution_{init_uniform_distribution()},
+      max_generate_id_count_{max_generate_id_count},
+      sources_data_bucket_prefix_{sources_data_bucket_prefix} {
 }
 
 void SaltfishServiceImpl::async_call_listeners(
@@ -206,7 +175,6 @@ void SaltfishServiceImpl::create_source(
     reply_with_status(CreateSourceResponse::DUPLICATE_FEATURE_NAME, reply);
     return;
   }
-
   string source_id;
   bool new_source_id{false};
   if (source.source_id().size() == boost::uuids::uuid::static_size()) {
@@ -230,7 +198,7 @@ void SaltfishServiceImpl::create_source(
 
     if (!new_source_id) {
       boost::optional<string> remote_schema =
-          sql_fetch_source_schema(conn.get(), source_id);
+          sql::fetch_source_schema(conn.get(), source_id);
       if (remote_schema) {
         if (*remote_schema == request.source().schema().SerializeAsString()) {
           // Trying to create a source that already exists with identical schema
@@ -307,7 +275,7 @@ void SaltfishServiceImpl::delete_source(
 /***********                       generate_id                      ***********/
 
 uuid_t SaltfishServiceImpl::generate_uuid() {
-  std::lock_guard<std::mutex> generate_uuid_lock(uuid_generator_mutex_);
+  lock_guard<mutex> generate_uuid_lock(uuid_generator_mutex_);
   return uuid_generator_();
 }
 
@@ -349,7 +317,6 @@ void put_records_put_handler(shared_ptr<PutRecordsReplier> replier,
     replier->reply(PutRecordsResponse::NETWORK_ERROR,
                    "Could not connect to the storage backend");
   }
-  return;
 }
 
 void put_records_get_handler(const source::Record& record,
@@ -367,111 +334,93 @@ void put_records_get_handler(const source::Record& record,
     index->set_value(to_string(index_value).c_str());
 
     riak::put_response_handler handler =
-        std::bind(&put_records_put_handler, replier, std::placeholders::_1);
+        bind(&put_records_put_handler, replier, placeholders::_1);
     update_value(new_record, handler);
   } else {
     replier->reply(PutRecordsResponse::NETWORK_ERROR,
                    "Could not connect to the storage backend");
   }
-  return;
 }
 
 }  // namespace
 
 
-void SaltfishServiceImpl::put_records_check_handler(
-    const PutRecordsRequest& request,
-    rpcz::reply<PutRecordsResponse> reply,
-    const std::error_code& error,
-    std::shared_ptr<riak::object> object,
-    riak::value_updater& update_value) {
-  if (!error) {
-    if (object) {
-      source::Source source;
-      if (!source.ParseFromString(object->value())) {
-        LOG(ERROR) << "Could not parse source metadata for request: "
-                   << request.DebugString();
-        reply_with_status(PutRecordsResponse::INVALID_SCHEMA, reply,
-                          "The source does not a valid schema");
-        return;
-      }
-      const source::Schema& schema = source.schema();
-      const auto& records = request.records();
-      pair<bool, string> result =
-              put_records_check_schema(schema, records.begin(), records.end());
-      if (!result.first) {
-        VLOG(0) << "Invalid record in put_records request: " << result.second;
-        reply_with_status(PutRecordsResponse::INVALID_RECORD, reply,
-                          result.second.c_str());
-        return;
-      }
-
-      uint32_t n_record_ids = request.record_ids_size();
-      uint32_t n_records = request.records_size();
-      vector<string> record_ids;
-      if (n_record_ids == 0) {
-        for (uint32_t i = 0; i < n_records; ++i)
-          record_ids.emplace_back(
-              move(boost::uuids::to_string(generate_uuid())));
-      } else {
-        CHECK_EQ(n_record_ids, n_records)
-            << "Expected the same number of records and record_ids";
-        record_ids.assign(request.record_ids().begin(),
-                          request.record_ids().end());
-      }
-
-      auto replier = make_shared<PutRecordsReplier>(record_ids, reply);
-      for (uint32_t i = 0; i < n_records; ++i) {
-        const string& record_id = record_ids[i];
-        const source::Record& record = request.records(i);
-        auto handler = bind(&put_records_get_handler, record,
-                            generate_random_index(),  replier, _1,  _2,  _3);
-        ostringstream bucket;
-        bucket << sources_data_bucket_prefix_ << request.source_id() << "/";
-        VLOG(0) << "Queueing put_record @ (b=" << bucket.str()
-                << " k=" << record_id << ")";
-        riak_proxy_.get_object(bucket.str(), record_id, handler);
-      }
-    } else {
-      VLOG(0) << "Received put_records request for non-existent source; id="
-              << request.source_id();
-      string msg = "Source does not exist (id=";
-      msg = msg + request.source_id() + ")";
-      reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID,
-                        reply, msg.c_str());
-    }
-  } else {
-    LOG(ERROR) << "Could not receive the object from Riak due to a network or "
-               << "server error.";
-    reply_with_status(PutRecordsResponse::NETWORK_ERROR, reply);
-  }
-}
-
 void SaltfishServiceImpl::put_records(
     const PutRecordsRequest& request,
     rpcz::reply<PutRecordsResponse> reply) {
-  uint32_t n_record_ids = request.record_ids_size();
   uint32_t n_records = request.records_size();
-  if (request.source_id().empty()) {
-    VLOG(0) << "Got put_records request with empty";
+  if (!is_valid_uuid(request.source_id())) {
+    VLOG(0) << "Got put_records request with an invalid source id";
     reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
-                      "The source id is not set in the request.");
+                      "The source id provided is invalid.");
     return;
-  }
-  if (n_records == 0) {
+  } else  if (n_records == 0) {
     VLOG(0) << "Empty put_records request";
     reply_with_status(PutRecordsResponse::NO_RECORDS_IN_REQUEST, reply);
     return;
   }
-  if (n_record_ids > 0 && n_record_ids != n_records) {
-    VLOG(0) << "Got invalid put_records request with n_records_ids != n_records";
-    reply_with_status(PutRecordsResponse::WRONG_NUMBER_OF_IDS, reply);
-    return;
+  try {
+    auto conn = sql_factory_.new_connection();
+    boost::optional<string> schema_str =
+        sql::fetch_source_schema(conn.get(), request.source_id());
+    if (!schema_str) {
+      VLOG(0) << "Received put_records request for non-existent source; id="
+              << request.source_id();
+      stringstream msg;
+      msg << "Source does not exist (id="
+          << uuid_bytes_to_hex(request.source_id()) << ")";
+      reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
+                        msg.str().c_str());
+      return;
+    }
+    source::Schema schema;
+    if (!schema.ParseFromString(*schema_str)) {
+      LOG(ERROR) << "Could not parse source schema for request: "
+                 << request.DebugString();
+      reply_with_status(PutRecordsResponse::INVALID_SCHEMA, reply,
+                        "The source does not a valid schema");
+      return;
+    }
+    for(auto ix = 0; ix < request.records_size(); ++ix) {
+      if (auto err = check_record(schema, request.records(ix).record())) {
+        stringstream msg;
+        msg << "At position " << ix << ": " << err.what();
+        VLOG(0) << "Invalid record in put_records request: " << msg.str();
+        reply_with_status(PutRecordsResponse::INVALID_RECORD, reply,
+                          msg.str().c_str());
+        return;
+      }
+    }
+    const int n_records{request.records_size()};
+    vector<string> record_ids{static_cast<size_t>(request.records_size())};
+    for (auto i = 0; i < n_records; ++i) {
+      auto tag_record = request.records(i);
+      if (tag_record.record_id().empty()) {
+        const int64_t index = generate_random_index();
+        record_ids.emplace_back(
+            reinterpret_cast<const char *>(&index), sizeof(int64_t));
+      } else if (tag_record.record_id().size() == sizeof(int64_t)) {
+        record_ids.emplace_back(tag_record.record_id());
+      }
+    }
+    auto replier = make_shared<PutRecordsReplier>(record_ids, reply);
+    for (auto i = 0; i < n_records; ++i) {
+      const string& record_id = record_ids[i];
+      const source::Record& record = request.records(i).record();
+      auto handler = bind(&put_records_get_handler, record,
+                          generate_random_index(),  replier, _1,  _2,  _3);
+      ostringstream bucket;
+      bucket << sources_data_bucket_prefix_
+             << uuid_bytes_to_hex(request.source_id());
+      VLOG(0) << "Queueing put_record @ (b=" << bucket.str()
+              << " k=" << record_id << ")";
+      riak_proxy_.get_object(bucket.str(), record_id, handler);
+    }
+  // async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
+  } catch (const ::sql::SQLException& e) {
+    LOG(ERROR) << "create_source() query error: " << e.what();
+    reply_with_status(PutRecordsResponse::UNKNOWN_ERROR, reply);
   }
-
-  auto handler = bind(&SaltfishServiceImpl::put_records_check_handler,
-                      this, request, reply, _1, _2, _3);
-  // riak_proxy_.get_object(sources_metadata_bucket_, request.source_id(), handler);
 }
 
 }}  // namespace reinferio::saltfish
