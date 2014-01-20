@@ -51,7 +51,7 @@ void PutRecordsReplier::reply(PutRecordsResponse::Status status,
       for (const auto& rid : record_ids_) {
         response.add_record_ids(rid);
       }
-      LOG(INFO) << response.DebugString();
+      // LOG(INFO) << response.DebugString();
       reply_.send(response);
       already_replied_ = true;
     }

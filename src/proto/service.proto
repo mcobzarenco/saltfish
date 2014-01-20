@@ -3,7 +3,7 @@ package reinferio.saltfish;
 import "source.proto";
 
 
-/*****************        SourceManager::create_source        *****************/
+/*****************     SourceManagerService::create_source    *****************/
 
 message CreateSourceRequest {
   optional reinferio.source.Source source = 1;
@@ -24,7 +24,7 @@ message CreateSourceResponse {
   optional bytes source_id = 3;
 }
 
-/*****************        SourceManager::delete_source        *****************/
+/*****************     SourceManagerService::delete_source    *****************/
 
 message DeleteSourceRequest {
   required bytes source_id = 1;
@@ -41,7 +41,7 @@ message DeleteSourceResponse {
   optional string msg = 2;
 }
 
-/*****************         SourceManager::generate_id         *****************/
+/*****************      SourceManagerService::generate_id     *****************/
 
 message GenerateIdRequest {
   enum IdType {
@@ -64,10 +64,8 @@ message GenerateIdResponse {
   repeated bytes ids = 3;
 }
 
-/*****************         SourceManager::put_records         *****************/
+/*****************      SourceManagerService::put_records     *****************/
 
-// TODO(mcobzarenco): Think about what happens to empty record_ids.
-// TODO(mcobzarenco): Make Metadata message type which contains Schema.
 message PutRecordsRequest {
   message TaggedRecord {
     optional bytes record_id = 1;

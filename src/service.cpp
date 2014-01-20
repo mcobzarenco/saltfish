@@ -387,7 +387,7 @@ void SaltfishServiceImpl::put_records(
       }
     }
     const int n_records{request.records_size()};
-    vector<string> record_ids{static_cast<size_t>(request.records_size())};
+    vector<string> record_ids;
     for (auto i = 0; i < n_records; ++i) {
       auto tag_record = request.records(i);
       if (tag_record.record_id().empty()) {
@@ -403,12 +403,13 @@ void SaltfishServiceImpl::put_records(
       const string& record_id = record_ids[i];
       const source::Record& record = request.records(i).record();
       auto handler = bind(&put_records_get_handler, record,
-                          generate_random_index(),  replier, _1,  _2,  _3);
+                          *reinterpret_cast<const int64_t*>(record_id.c_str()),
+                          replier, _1,  _2,  _3);
       ostringstream bucket;
       bucket << sources_data_bucket_prefix_
              << uuid_bytes_to_hex(request.source_id());
       VLOG(0) << "Queueing put_record @ (b=" << bucket.str()
-              << " k=" << record_id << ")";
+              << " k=" << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
       riak_proxy_.get_object(bucket.str(), record_id, handler);
     }
   // async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
