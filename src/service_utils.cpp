@@ -14,18 +14,6 @@ namespace saltfish {
 
 using namespace std;
 
-bool schema_has_duplicates(const source::Schema& schema) {
-    // TODO: Maybe use a more generic function that this..
-    std::set<std::string> names;
-    for (const auto& feature : schema.features()) {
-        if (names.count(feature.name()) == 1)
-            return true;
-        names.insert(feature.name());
-    }
-    return false;
-}
-
-
 PutRecordsReplier::PutRecordsReplier(
     const vector<string>& record_ids, rpcz::reply<PutRecordsResponse> reply)
     : record_ids_(record_ids), n_records_(record_ids.size()),

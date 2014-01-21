@@ -4,19 +4,19 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-
-#include <utility>
-#include <tuple>
-
-#include <iostream>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
+#include <iostream>
+#include <memory>
+#include <thread>
+#include <utility>
+#include <vector>
+
 
 using namespace std;
 using namespace reinferio;
-using saltfish::put_records_check_schema;
 
 TEST(IsValidUuidBytesTest, IsValidUuidBytes) {
   string u1;
@@ -38,10 +38,14 @@ TEST(SchemaHasDuplicatesTest, EmptyNoDupsAndDups) {
   feat = schema.add_features();
   feat->set_name("feature_1");
   feat->set_feature_type(source::Feature::REAL);
+  EXPECT_FALSE(saltfish::schema_has_duplicates(schema))
+          << "there are no duplicates";
 
   feat = schema.add_features();
   feat->set_name("feature_2");
   feat->set_feature_type(source::Feature::REAL);
+  EXPECT_FALSE(saltfish::schema_has_duplicates(schema))
+          << "there are no duplicates";
 
   feat = schema.add_features();
   feat->set_name("feature_3");
@@ -57,7 +61,7 @@ TEST(SchemaHasDuplicatesTest, EmptyNoDupsAndDups) {
       << "feature_1 is duplicated";
 }
 
-class PutRecordsCheckSchemaTest : public ::testing::Test {
+class CheckRecordTest : public ::testing::Test {
  protected:
   virtual void SetUp() {
     source::Feature* feat{nullptr};
@@ -77,100 +81,130 @@ class PutRecordsCheckSchemaTest : public ::testing::Test {
   source::Schema schema_;
 };
 
-// TEST_F(PutRecordsCheckSchemaTest, Valid) {
-//   saltfish::PutRecordsRequest req;
-//   source::Record *record{nullptr};
-//   record = req.add_records();
-//   record->add_reals(0.1234);
-//   record->add_reals(-852.32);
-//   record->add_cats("blue");
+TEST_F(CheckRecordTest, Valid) {
+  saltfish::PutRecordsRequest req;
+  source::Record *record{nullptr};
+  record = req.add_records()->mutable_record();
+  record->add_reals(0.1234);
+  record->add_reals(-852.32);
+  record->add_cats("blue");
+  EXPECT_FALSE(saltfish::check_record(schema_, *record));
 
-//   record = req.add_records();
-//   record->add_reals(0.434);
-//   record->add_reals(-1052.32);
-//   record->add_cats("red");
+  record = req.add_records()->mutable_record();
+  record->add_reals(0.434);
+  record->add_reals(-1052.32);
+  record->add_cats("red");
+  EXPECT_FALSE(saltfish::check_record(schema_, *record));
 
-//   auto begin_recs = req.records().begin();
-//   auto end_recs = req.records().end();
-//   auto checked = put_records_check_schema(schema_, begin_recs, end_recs);
-//   EXPECT_TRUE(checked.first);
-//   EXPECT_EQ("", checked.second);
-// }
+  for (auto& tagged : req.records()) {
+      auto status = saltfish::check_record(schema_, tagged.record());
+      EXPECT_FALSE(status);
+      EXPECT_TRUE(status.what().empty());
+  }
+}
 
-// TEST_F(PutRecordsCheckSchemaTest, MissingFeature) {
-//   saltfish::PutRecordsRequest req;
-//   source::Record *record{nullptr};
-//   record = req.add_records();
-//   record->add_reals(0.1234);
-//   record->add_reals(-852.32);
-//   record->add_cats("blue");
+TEST_F(CheckRecordTest, MissingFeature) {
+  source::Record record;
+  record.add_reals(0.434);
+  record.add_cats("red");
+  auto status = saltfish::check_record(schema_, record);
+  EXPECT_TRUE(static_cast<bool>(status));
+  EXPECT_FALSE(status.what().empty());
+}
 
-//   record = req.add_records();
-//   record->add_reals(0.434);
-//   record->add_cats("red");
+TEST_F(CheckRecordTest, TooManyFeatures) {
+  source::Record record;
+  record.add_reals(0.434);
+  record.add_reals(-1052.32);
+  record.add_cats("red");
+  record.add_cats("yellow");
+  auto status = saltfish::check_record(schema_, record);
+  EXPECT_TRUE(static_cast<bool>(status));
+  EXPECT_FALSE(status.what().empty());
+}
 
-//   auto begin_recs = req.records().begin();
-//   auto end_recs = req.records().end();
-//   auto checked = put_records_check_schema(schema_, begin_recs, end_recs);
-//   EXPECT_FALSE(checked.first);
-//   EXPECT_NE("", checked.second);
-// }
+TEST_F(CheckRecordTest, IncorrectFeatureType) {
+  source::Record record;
+  record.add_reals(0.434);
+  record.add_cats("red");
+  record.add_cats("yellow");
+  auto status = saltfish::check_record(schema_, record);
+  EXPECT_TRUE(static_cast<bool>(status));
+  EXPECT_FALSE(status.what().empty());
+}
 
-// TEST_F(PutRecordsCheckSchemaTest, TooManyFeatures) {
-//   saltfish::PutRecordsRequest req;
-//   source::Record *record{nullptr};
-//   record = req.add_records();
-//   record->add_reals(0.1234);
-//   record->add_reals(-852.32);
-//   record->add_cats("blue");
+TEST_F(CheckRecordTest, InvalidFeatureInSchema) {
+  source::Schema invalid_schema = schema_;
+  source::Feature* feat = invalid_schema.add_features();
+  feat->set_name("problematic_feature");
+  feat->set_feature_type(source::Feature::INVALID);
 
-//   record = req.add_records();
-//   record->add_reals(0.434);
-//   record->add_reals(-1052.32);
-//   record->add_cats("red");
-//   record->add_cats("yellow");
+  source::Record record;
+  auto status = saltfish::check_record(invalid_schema, record);
+  EXPECT_TRUE(static_cast<bool>(status));
+  EXPECT_THAT(status.what(), testing::HasSubstr("invalid"));
+  EXPECT_THAT(status.what(), testing::HasSubstr("problematic_feature"));
+}
 
-//   auto begin_recs = req.records().begin();
-//   auto end_recs = req.records().end();
-//   auto checked = put_records_check_schema(schema_, begin_recs, end_recs);
-//   EXPECT_FALSE(checked.first);
-//   EXPECT_NE("", checked.second);
-// }
+namespace {
 
-// TEST_F(PutRecordsCheckSchemaTest, IncorrectFeatureType) {
-//   saltfish::PutRecordsRequest req;
-//   source::Record *record{nullptr};
-//   record = req.add_records();
-//   record->add_reals(0.1234);
-//   record->add_reals(-852.32);
-//   record->add_cats("blue");
+struct CountHandler {
+  void operator ()() { ++*calls_; }
+  int *calls_;
+};
 
-//   record = req.add_records();
-//   record->add_reals(0.434);
-//   record->add_cats("red");
-//   record->add_cats("yellow");
+}
 
-//   auto begin_recs = req.records().begin();
-//   auto end_recs = req.records().end();
-//   auto checked = put_records_check_schema(schema_, begin_recs, end_recs);
-//   EXPECT_FALSE(checked.first);
-//   EXPECT_NE("", checked.second);
-// }
+TEST(ReplySyncTest, ReplyWithSuccess) {
+  constexpr uint32_t N_THREADS = 10;
+  int n_calls;
+  CountHandler handler{&n_calls};
+  saltfish::ReplySync replier{N_THREADS, handler};
 
-// TEST_F(PutRecordsCheckSchemaTest, InvalidFeatureInSchema) {
-//   source::Schema invalid_schema = schema_;
-//   source::Feature* feat = invalid_schema.add_features();
-//   feat->set_name("problematic_feature");
-//   feat->set_feature_type(source::Feature::INVALID);
+  std::vector<std::thread> threads;
+  for (uint32_t i = 0; i < N_THREADS; ++i) {
+    EXPECT_EQ(0, n_calls);
+    threads.emplace_back(std::thread([&replier]() {
+          volatile int unused = 0;
+          for (auto x = 0; x < 1000000; ++x) { ++unused; }
+          replier.ok();
+        }));
+  }
+  for (auto& th : threads) {
+    th.join();
+  }
+  EXPECT_EQ(N_THREADS, replier.ok_received());
+  EXPECT_EQ(1, n_calls);
+}
 
-//   saltfish::PutRecordsRequest req;
-//   auto begin_recs = req.records().begin();
-//   auto end_recs = req.records().end();
-//   auto checked = put_records_check_schema(invalid_schema, begin_recs, end_recs);
-//   EXPECT_FALSE(checked.first);
-//   EXPECT_THAT(checked.second, testing::HasSubstr("invalid"));
-//   EXPECT_THAT(checked.second, testing::HasSubstr("problematic_feature"));
-// }
+TEST(ReplySyncTest, ReplyWithError) {
+  constexpr uint32_t N_THREADS = 10;
+  int n_calls_success{0};
+  CountHandler handler_success{&n_calls_success};
+  saltfish::ReplySync replier{N_THREADS, handler_success};
+
+  std::vector<std::thread> threads;
+  int n_calls_error{0};
+  CountHandler handler_error{&n_calls_error};
+  threads.emplace_back(std::thread([&replier, &handler_error]() {
+        volatile int unused = 0;
+        for (auto x = 0; x < 1000000; ++x) { ++unused; }
+        replier.error(handler_error);
+      }));
+  for (uint32_t i = 0; i < N_THREADS - 1; ++i) {
+    EXPECT_EQ(0, n_calls_success);
+    threads.emplace_back(std::thread([&replier]() {
+          volatile int unused = 0;
+          for (auto x = 0; x < 1000000; ++x) { ++unused; }
+          replier.ok();
+        }));
+  }
+  for (auto& th : threads) { th.join(); }
+  EXPECT_EQ(N_THREADS, replier.ok_received());
+  EXPECT_EQ(1, n_calls_success);
+  EXPECT_EQ(1, n_calls_error);
+}
+
 
 /*                                    main                                    */
 

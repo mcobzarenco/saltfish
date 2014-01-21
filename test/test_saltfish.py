@@ -86,7 +86,7 @@ def make_put_records_req(source_id, records=None, record_ids=None):
 
 
 def uuid2hex(uuid_str):
-    return uuid.UUID(bytes=uuid_str)
+    return str(uuid.UUID(bytes=uuid_str))
 
 
 def bytes_to_int64(int_str):
@@ -158,6 +158,8 @@ class SaltfishTests(unittest.TestCase):
 
         remote_schema = source_pb2.Schema()
         remote_schema.ParseFromString(remote['source_schema'])
+        if request.source.source_id != '':
+            self.assertEqual(request.source.source_id, remote['source_id'])
         self.assertEqual(request.source.user_id, remote['user_id'])
         self.assertEqual(request.source.name, remote['name'])
         self.assertEqual(request.source.schema.features,
@@ -213,7 +215,8 @@ class SaltfishTests(unittest.TestCase):
         source_name = ur"Some Test Source-123客\x00家話\\;"
         request = make_create_source_req(source_id.get_bytes(),
                                          source_name, self._features)
-        log.info('Creating a new source with a given id (id=%s)..' % str(source_id))
+        log.info('Creating a new source with a given id (id=%s)..' %
+                 uuid2hex(source_id.get_bytes()))
         self.try_create_source(request)
 
     def test_create_source_with_no_id(self):

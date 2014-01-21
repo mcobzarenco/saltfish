@@ -79,11 +79,7 @@ class SaltfishServiceImpl : public SaltfishService {
   inline int64_t generate_random_index();
   inline uuid_t generate_uuid();
 
-  void put_records_check_handler(const PutRecordsRequest& request,
-                                 rpcz::reply<PutRecordsResponse> reply,
-                                 const std::error_code& error,
-                                 std::shared_ptr<riak::object> object,
-                                 riak::value_updater& update_value);
+  std::vector<std::string> ids_for_put_request(const PutRecordsRequest& request);
 
   RiakProxy& riak_proxy_;
   sql::ConnectionFactory& sql_factory_;

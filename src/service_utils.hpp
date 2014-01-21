@@ -15,6 +15,7 @@
 #include <mysql_driver.h>
 #include <mysql_connection.h>
 
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -42,7 +43,15 @@ inline std::string uuid_bytes_to_hex(const std::string& id) {
   return boost::uuids::to_string(from_string(id));
 }
 
-bool schema_has_duplicates(const source::Schema& schema);
+inline bool schema_has_duplicates(const source::Schema& schema){
+    using Compare = bool(*)(const std::string*, const std::string*);
+    std::set<const std::string*, Compare> unique_names{
+        [](const std::string* a, const std::string* b) { return *a < *b; } };
+    for(const auto& feature : schema.features()) {
+        unique_names.insert(&feature.name());
+    }
+    return unique_names.size() != static_cast<size_t>(schema.features().size());
+}
 
 class MaybeError {
  public:
@@ -91,44 +100,6 @@ inline MaybeError check_record(
   return MaybeError{};
 }
 
-template<typename RecordIter>
-std::pair<bool, std::string> put_records_check_schema(
-    const source::Schema& schema, RecordIter begin, RecordIter end,
-    std::function<bool(RecordIter)> ) {
-  int exp_reals{0}, exp_cats{0};
-  for (auto feature : schema.features()) {
-    if (feature.feature_type() == source::Feature::INVALID) {
-      std::ostringstream msg;
-      msg << "Source unusable as its schema contains a feature marked as invalid "
-          << "(feature_name=" << feature.name() << ")";
-      return std::make_pair(false, msg.str());
-    } else if (feature.feature_type() == source::Feature::REAL) {
-      exp_reals++;
-    } else if (feature.feature_type() == source::Feature::CATEGORICAL) {
-      exp_cats++;
-    } else {
-      return std::make_pair(false, "Source contains a feature unsupported by saltfish");
-    }
-  }
-  int index{0};
-  for (auto record = begin; record != end; ++record) {
-    if (record->reals_size() != exp_reals) {
-      std::ostringstream msg;
-      msg << "Record with index " << index << " contains " << record->reals_size()
-          << " real features (expected "<< exp_reals << ")";
-      return std::make_pair(false, msg.str());
-    } else if (record->cats_size() != exp_cats) {
-      std::ostringstream msg;
-      msg << "Record with index " << index << " contains " << record->cats_size()
-          << " categorical features (expected "<< exp_cats << ")";
-      return std::make_pair(false, msg.str());
-    }
-    index++;
-  }
-  return std::make_pair(true, "");
-}
-
-
 class PutRecordsReplier {
  public:
   PutRecordsReplier(const std::vector<std::string>& record_ids,
@@ -146,6 +117,45 @@ class PutRecordsReplier {
   std::mutex reply_mutex_;
   bool already_replied_;
 };
+
+class ReplySync {
+ public:
+  using Postlude = std::function<void()>;
+
+  ReplySync(uint32_t n_acks, Postlude success_handler)
+      : n_acks_{n_acks}, success_{move(success_handler)} {}
+  ~ReplySync() {}
+
+  inline uint32_t ok_received() const { return ok_received_; }
+
+  inline void ok();
+  inline void error(Postlude error_handler);
+ private:
+  const uint32_t n_acks_;
+  Postlude success_;
+
+  std::mutex reply_mutex_;
+  uint32_t ok_received_{0};
+  bool already_replied_{false};
+};
+
+void ReplySync::ok() {
+  std::lock_guard<std::mutex> reply_lock(reply_mutex_);
+  ++ok_received_;
+  CHECK_LE(ok_received_, n_acks_)
+      << "Received more responses than expected";
+  if (ok_received_ == n_acks_ && !already_replied_) {
+    already_replied_ = true;
+    success_();
+  }
+}
+
+void ReplySync::error(Postlude error_handler) {
+  std::lock_guard<std::mutex> reply_lock(reply_mutex_);
+  already_replied_ = true;
+  error_handler();
+}
+
 
 namespace sql {
 

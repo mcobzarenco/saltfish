@@ -189,7 +189,6 @@ void SaltfishServiceImpl::create_source(
     reply_with_status(CreateSourceResponse::INVALID_SOURCE_ID, reply);
     return;
   }
-
   LOG(INFO) << "create_source() inserting source (id="
             << boost::uuids::to_string(from_string(source_id))
             << ", schema='" << source.schema().ShortDebugString() << "')";
@@ -303,6 +302,22 @@ int64_t SaltfishServiceImpl::generate_random_index() {
   return uniform_distribution_();
 }
 
+vector<string> SaltfishServiceImpl::ids_for_put_request(
+    const PutRecordsRequest& request) {
+  vector<string> record_ids;
+  for (auto i = 0; i < request.records_size(); ++i) {
+    auto tag_record = request.records(i);
+    if (tag_record.record_id().empty()) {
+      const int64_t index = generate_random_index();
+      record_ids.emplace_back(
+          reinterpret_cast<const char *>(&index), sizeof(int64_t));
+    } else if (tag_record.record_id().size() == sizeof(int64_t)) {
+      record_ids.emplace_back(tag_record.record_id());
+    }
+  }
+  return move(record_ids);
+}
+
 namespace {
 
 void put_records_put_handler(shared_ptr<PutRecordsReplier> replier,
@@ -325,7 +340,7 @@ void put_records_get_handler(const source::Record& record,
     auto new_record = std::make_shared<riak::object>();
     record.SerializeToString(new_record->mutable_value());
 
-    riak::rpair *index = new_record->add_indexes();
+    auto* index = new_record->add_indexes();
     index->set_key("randomindex_int");
     index->set_value(to_string(index_value).c_str());
 
@@ -386,22 +401,11 @@ void SaltfishServiceImpl::put_records(
         return;
       }
     }
-    const int n_records{request.records_size()};
-    vector<string> record_ids;
-    for (auto i = 0; i < n_records; ++i) {
-      auto tag_record = request.records(i);
-      if (tag_record.record_id().empty()) {
-        const int64_t index = generate_random_index();
-        record_ids.emplace_back(
-            reinterpret_cast<const char *>(&index), sizeof(int64_t));
-      } else if (tag_record.record_id().size() == sizeof(int64_t)) {
-        record_ids.emplace_back(tag_record.record_id());
-      }
-    }
+    auto record_ids = ids_for_put_request(request);
     auto replier = make_shared<PutRecordsReplier>(record_ids, reply);
-    for (auto i = 0; i < n_records; ++i) {
-      const string& record_id = record_ids[i];
-      const source::Record& record = request.records(i).record();
+    for (auto i = 0; i < request.records_size(); ++i) {
+      const auto& record_id = record_ids[i];
+      const auto& record = request.records(i).record();
       auto handler = bind(&put_records_get_handler, record,
                           *reinterpret_cast<const int64_t*>(record_id.c_str()),
                           replier, _1,  _2,  _3);
@@ -412,7 +416,7 @@ void SaltfishServiceImpl::put_records(
               << " k=" << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
       riak_proxy_.get_object(bucket.str(), record_id, handler);
     }
-  // async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
+    // async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
   } catch (const ::sql::SQLException& e) {
     LOG(ERROR) << "create_source() query error: " << e.what();
     reply_with_status(PutRecordsResponse::UNKNOWN_ERROR, reply);

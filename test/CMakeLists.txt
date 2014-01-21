@@ -29,6 +29,8 @@ link_directories(${binary_dir})
 add_executable(
   tests
     test_service_utils.cpp
+    ../src/service_utils.hpp
+    ../src/service_utils.cpp
     ${source_dir}
 )
 add_dependencies(tests GTest)
