@@ -20,7 +20,7 @@ int main(int argc, char **argv) {
   string conf_file;
   string bind_str;
   string riak_host;
-  uint16_t riak_port;
+  uint16_t riak_port{0};
 
   auto description = po::options_description{
     "Saltfish server (built on " + build_time +
