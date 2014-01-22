@@ -320,36 +320,40 @@ vector<string> SaltfishServiceImpl::ids_for_put_request(
 
 namespace {
 
-void put_records_put_handler(shared_ptr<PutRecordsReplier> replier,
-                             const std::error_code& error) {
+void put_records_put_handler(shared_ptr<ReplySync> replier,
+                             rpcz::reply<PutRecordsResponse> reply,
+                             const error_code& error) {
   if (!error) {
-    replier->reply(PutRecordsResponse::OK, {});
+    replier->ok();
   } else {
-    replier->reply(PutRecordsResponse::NETWORK_ERROR,
-                   "Could not connect to the storage backend");
+    replier->error([&reply] () {
+        reply_with_status(PutRecordsResponse::NETWORK_ERROR, reply,
+                          "Could not connect to the storage backend");
+      });
   }
 }
 
-void put_records_get_handler(const source::Record& record,
+void put_records_get_handler(const source::Record record,
                              const int64_t index_value,
-                             shared_ptr<PutRecordsReplier> replier,
-                             const std::error_code& error,
-                             std::shared_ptr<riak::object> object,
+                             shared_ptr<ReplySync> replier,
+                             rpcz::reply<PutRecordsResponse> reply,
+                             const error_code& error,
+                             shared_ptr<riak::object> object,
                              riak::value_updater& update_value) {
   if (!error) {
-    auto new_record = std::make_shared<riak::object>();
+    auto new_record = make_shared<riak::object>();
     record.SerializeToString(new_record->mutable_value());
-
     auto* index = new_record->add_indexes();
     index->set_key("randomindex_int");
     index->set_value(to_string(index_value).c_str());
-
     riak::put_response_handler handler =
-        bind(&put_records_put_handler, replier, placeholders::_1);
+        bind(&put_records_put_handler, replier, reply, placeholders::_1);
     update_value(new_record, handler);
   } else {
-    replier->reply(PutRecordsResponse::NETWORK_ERROR,
-                   "Could not connect to the storage backend");
+    replier->error([&reply] () {
+        reply_with_status(PutRecordsResponse::NETWORK_ERROR, reply,
+                          "Could not connect to the storage backend");
+      });
   }
 }
 
@@ -371,16 +375,15 @@ void SaltfishServiceImpl::put_records(
   }
   try {
     auto conn = sql_factory_.new_connection();
-    boost::optional<string> schema_str =
-        sql::fetch_source_schema(conn.get(), request.source_id());
+    auto schema_str = sql::fetch_source_schema(conn.get(), request.source_id());
     if (!schema_str) {
       VLOG(0) << "Received put_records request for non-existent source; id="
-              << request.source_id();
+              << uuid_bytes_to_hex(request.source_id());
       stringstream msg;
       msg << "Source does not exist (id="
           << uuid_bytes_to_hex(request.source_id()) << ")";
-      reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
-                        msg.str().c_str());
+      reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply
+                        );
       return;
     }
     source::Schema schema;
@@ -402,13 +405,21 @@ void SaltfishServiceImpl::put_records(
       }
     }
     auto record_ids = ids_for_put_request(request);
-    auto replier = make_shared<PutRecordsReplier>(record_ids, reply);
+    CHECK_EQ(request.records_size(), record_ids.size());
+    auto reply_success = [reply, record_ids] () mutable {
+      PutRecordsResponse response;
+      response.set_status(PutRecordsResponse::OK);
+      for (const auto& rid : record_ids) response.add_record_ids(rid);
+      reply.send(response);
+    };
+    auto replier = make_shared<ReplySync>(
+        request.records_size(), reply_success);
     for (auto i = 0; i < request.records_size(); ++i) {
       const auto& record_id = record_ids[i];
       const auto& record = request.records(i).record();
       auto handler = bind(&put_records_get_handler, record,
                           *reinterpret_cast<const int64_t*>(record_id.c_str()),
-                          replier, _1,  _2,  _3);
+                          replier, reply, _1,  _2,  _3);
       ostringstream bucket;
       bucket << sources_data_bucket_prefix_
              << uuid_bytes_to_hex(request.source_id());

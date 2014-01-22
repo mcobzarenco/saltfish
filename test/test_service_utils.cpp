@@ -186,25 +186,27 @@ TEST(ReplySyncTest, ReplyWithError) {
   std::vector<std::thread> threads;
   int n_calls_error{0};
   CountHandler handler_error{&n_calls_error};
-  threads.emplace_back(std::thread([&replier, &handler_error]() {
-        volatile int unused = 0;
-        for (auto x = 0; x < 1000000; ++x) { ++unused; }
-        replier.error(handler_error);
-      }));
-  for (uint32_t i = 0; i < N_THREADS - 1; ++i) {
-    EXPECT_EQ(0, n_calls_success);
-    threads.emplace_back(std::thread([&replier]() {
-          volatile int unused = 0;
-          for (auto x = 0; x < 1000000; ++x) { ++unused; }
-          replier.ok();
-        }));
+  auto report_error = [&replier, &handler_error]() {
+    volatile int unused = 0;
+    for (auto x = 0; x < 1000000; ++x) { ++unused; }
+    replier.error(handler_error);
+  };
+  auto report_success = [&replier]() {
+    volatile int unused = 0;
+    for (auto x = 0; x < 1000000; ++x) { ++unused; }
+    replier.ok();
+  };
+
+  threads.emplace_back(std::thread(report_error));
+  threads.emplace_back(std::thread(report_error));
+  for (uint32_t i = 0; i < N_THREADS - 2; ++i) {
+    threads.emplace_back(std::thread{report_success});
   }
   for (auto& th : threads) { th.join(); }
-  EXPECT_EQ(N_THREADS, replier.ok_received());
-  EXPECT_EQ(1, n_calls_success);
+  EXPECT_EQ(N_THREADS - 2, replier.ok_received());
+  EXPECT_EQ(0, n_calls_success);
   EXPECT_EQ(1, n_calls_error);
 }
-
 
 /*                                    main                                    */
 

@@ -100,24 +100,6 @@ inline MaybeError check_record(
   return MaybeError{};
 }
 
-class PutRecordsReplier {
- public:
-  PutRecordsReplier(const std::vector<std::string>& record_ids,
-                    rpcz::reply<PutRecordsResponse> reply);
-  ~PutRecordsReplier();
-
-  void reply(PutRecordsResponse::Status status, const std::string& msg);
-
- private:
-  const std::vector<std::string> record_ids_;
-  const std::size_t n_records_;
-
-  std::uint32_t ok_received_;
-  rpcz::reply<PutRecordsResponse> reply_;
-  std::mutex reply_mutex_;
-  bool already_replied_;
-};
-
 class ReplySync {
  public:
   using Postlude = std::function<void()>;
@@ -152,6 +134,7 @@ void ReplySync::ok() {
 
 void ReplySync::error(Postlude error_handler) {
   std::lock_guard<std::mutex> reply_lock(reply_mutex_);
+  if (already_replied_) return;
   already_replied_ = true;
   error_handler();
 }
