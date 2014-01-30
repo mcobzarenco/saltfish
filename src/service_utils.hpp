@@ -24,8 +24,7 @@
 #include <utility>
 
 
-namespace reinferio {
-namespace saltfish {
+namespace reinferio { namespace saltfish {
 
 inline bool is_valid_uuid_bytes(const std::string& id) {
   return boost::uuids::uuid::static_size() == id.size();
@@ -33,7 +32,8 @@ inline bool is_valid_uuid_bytes(const std::string& id) {
 
 inline boost::uuids::uuid from_string(const std::string& s) {
   CHECK(is_valid_uuid_bytes(s))
-      << "a uuid has exactly " << boost::uuids::uuid::static_size() << " bytes";
+      << "a uuid has exactly " << boost::uuids::uuid::static_size()
+      << " bytes != " << s.size();
   boost::uuids::uuid uuid;
   copy(s.begin(), s.end(), uuid.begin());
   return uuid;
@@ -162,7 +162,6 @@ inline boost::optional<std::string> fetch_source_schema(
 }
 
 }  // namespace sql
-
 }}  // namespace reinferio::saltfish
 
 #endif  // REINFERIO_SALTFISH_SERVICE_UTILS_HPP
