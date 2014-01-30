@@ -39,6 +39,7 @@ message DeleteSourceResponse {
   }
   optional Status status = 1;
   optional string msg = 2;
+  optional bool updated = 3;
 }
 
 /*****************      SourceManagerService::generate_id     *****************/

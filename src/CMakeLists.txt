@@ -26,20 +26,6 @@ add_library(source_pb_lib ${SOURCE_PB})
 add_library(service_pb_lib ${SERVICE_PB})
 target_link_libraries(service_pb_lib source_pb_lib)
 
-
-add_library(
-  riak_proxy
-    riak_proxy.hpp
-    riak_proxy.cpp
-)
-target_link_libraries(
-  riak_proxy
-    riak-cpp
-    ${Boost_LIBRARIES}
-    ${GLOG_LIBRARY}
-    ${PROTOBUF_LIBRARY}
-)
-
 add_library(
   sql_pool
     sql_pool.hpp
@@ -56,14 +42,13 @@ add_library(
     service.hpp
     service.cpp
     service_utils.hpp
-    riak_proxy.hpp
 )
 target_link_libraries(
   saltfish_service
-    riak_proxy
     sql_pool
     source_pb_lib
     service_pb_lib
+    riakpp
     rpcz
     ${Boost_LIBRARIES}
     ${GLOG_LIBRARY}
@@ -77,15 +62,15 @@ add_library(
     publishers.hpp
     publishers.cpp
     service.hpp
-    riak_proxy.hpp
     ${CONFIG_PB}
 )
 target_link_libraries(
   saltfish_server
-    riak_proxy
     sql_pool
     saltfish_service
     rabbitmq
+    riakpp
+    rpcz
     SimpleAmqpClient
     ${Boost_LIBRARIES}
     ${GLOG_LIBRARY}
@@ -118,7 +103,6 @@ target_link_libraries(
     ${Boost_LIBRARIES}
     ${PROTOBUF_LIBRARY}
 )
-
 
 # add_executable(
 #   main2

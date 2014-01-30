@@ -1,5 +1,6 @@
 #define BOOST_BIND_NO_PLACEHOLDERS
 
+#include <riakpp/connection_pool.hpp>
 #include "server.hpp"
 #include "service.hpp"
 #include "publishers.hpp"
@@ -17,14 +18,17 @@ SaltfishServer::SaltfishServer(const config::Saltfish& config)
     : config_(config), signal_ios_(), signal_thread_(),
       ios_(), work_(new boost::asio::io_service::work(ios_)),
       application_(), server_(application_),
-      riak_proxy_(config.riak().host(), config.riak().port(), ios_),
-      sql_factory_(config.maria_db().host(), config.maria_db().user(),
-                   config.maria_db().password(), config.maria_db().db()),
+      //      riak_client_(config.riak().host(), config.riak().port(), ios_),
+      riak_client_(config.riak().host(), config.riak().port()),
+      // sql_factory_(config.maria_db().host(), config.maria_db().user(),
+      //              config.maria_db().password(), config.maria_db().db()),
+      sql_factory_(unique_ptr<sql::ConnectionFactory>{new sql::ConnectionFactory{config.maria_db().host(), config.maria_db().user(), config.maria_db().password(), config.maria_db().db()}}),
       rabbit_pub_(config.rabbit_mq().host(), config.rabbit_mq().port(),
                   config.rabbit_mq().user(), config.rabbit_mq().password()) {
   for(int i = 0; i < 5; ++i) {
     threads_.emplace_back( ([this]() {
-          LOG(INFO) << "Calling io_service::run() in thread " << std::this_thread::get_id();
+          LOG(INFO) << "Calling io_service::run() in thread "
+                    << std::this_thread::get_id();
           this->ios_.run();
           LOG(INFO) << "Exiting thread " << std::this_thread::get_id();
         }) );
@@ -32,6 +36,7 @@ SaltfishServer::SaltfishServer(const config::Saltfish& config)
 }
 
 SaltfishServer::~SaltfishServer() noexcept {
+  sql_factory_.reset();
   if (signal_thread_ != nullptr) {
     signal_ios_.stop();
     signal_thread_->join();
@@ -46,14 +51,13 @@ SaltfishServer::~SaltfishServer() noexcept {
 void SaltfishServer::run() noexcept {
   try {
     saltfish::SaltfishServiceImpl saltfish_serv(
-        riak_proxy_, sql_factory_, ios_,
+        riak_client_, *sql_factory_, ios_,
         config_.max_generate_id_count(),
         config_.sources_data_bucket_prefix());
     auto rmq_listener = bind(&RabbitPublisher::publish, &rabbit_pub_, _1, _2);
     saltfish_serv.register_listener(RequestType::ALL, rmq_listener);
 
-    LOG(INFO) << "Exchange: " << rabbit_pub_.exchange;
-
+    // LOG(INFO) << "Exchange: " << rabbit_pub_.exchange;
     server_.register_service(&saltfish_serv);
     server_.bind(config_.bind_str());
     LOG(INFO) << "Serving requests at " << config_.bind_str() << " (with Riak @ "

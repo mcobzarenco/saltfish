@@ -2,29 +2,27 @@
 #define REINFERIO_SALTFISH_SERVICE_HPP
 
 #include "sql_pool.hpp"
-
 #include "service.pb.h"
 #include "service.rpcz.h"
 
 #include <rpcz/rpcz.hpp>
-#include <riak/client.hxx>
+#include <riakpp/client.hpp>
 #include <boost/asio.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 
 #include <cstdint>
-#include <string>
 #include <memory>
-#include <system_error>
 #include <mutex>
-#include <functional>
+#include <system_error>
+#include <string>
 #include <vector>
 
+namespace riak {
+class client;
+}
 
-namespace reinferio {
-namespace saltfish {
-
-class RiakProxy;
+namespace reinferio { namespace saltfish {
 
 using uuid_t = boost::uuids::uuid;
 
@@ -40,7 +38,7 @@ class SaltfishService : public SourceManagerService {
 class SaltfishServiceImpl : public SaltfishService {
  public:
   SaltfishServiceImpl(
-      RiakProxy& riak_proxy,
+      riak::client& riak_client,
       sql::ConnectionFactory& sql_factory,
       boost::asio::io_service& ios,
       uint32_t max_generate_id_count,
@@ -73,15 +71,14 @@ class SaltfishServiceImpl : public SaltfishService {
     Listener handler;
     boost::asio::io_service::strand strand;
   };
-
-  inline void async_call_listeners(RequestType req_type, const std::string& request);
+  inline void async_call_listeners(
+      RequestType req_type, const std::string& request);
 
   inline int64_t generate_random_index();
   inline uuid_t generate_uuid();
-
   std::vector<std::string> ids_for_put_request(const PutRecordsRequest& request);
 
-  RiakProxy& riak_proxy_;
+  riak::client& riak_client_;
   sql::ConnectionFactory& sql_factory_;
   boost::asio::io_service& ios_;
 

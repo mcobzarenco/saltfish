@@ -1,23 +1,22 @@
 #ifndef REINFERIO_SALTFISH_SERVER_HPP
 #define REINFERIO_SALTFISH_SERVER_HPP
 
-#include "riak_proxy.hpp"
 #include "sql_pool.hpp"
 #include "publishers.hpp"
-
 #include "config.pb.h"
 
 #include <boost/asio.hpp>
 #include <glog/logging.h>
+#include <riakpp/client.hpp>
 #include <rpcz/rpcz.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <thread>
 
 
-namespace reinferio {
-namespace saltfish {
+namespace reinferio { namespace saltfish {
 
 class SaltfishServer {
  public:
@@ -38,8 +37,7 @@ class SaltfishServer {
   config::Saltfish config_;
 
   boost::asio::io_service signal_ios_;
-  std::unique_ptr<std::thread>
-  signal_thread_;
+  std::unique_ptr<std::thread> signal_thread_;
 
   boost::asio::io_service ios_;
   std::unique_ptr<boost::asio::io_service::work> work_;
@@ -47,13 +45,11 @@ class SaltfishServer {
 
   rpcz::application application_;
   rpcz::server server_;
-  RiakProxy riak_proxy_;
-  sql::ConnectionFactory sql_factory_;
+  riak::client riak_client_;
+  std::unique_ptr<sql::ConnectionFactory> sql_factory_;
   RabbitPublisher rabbit_pub_;
 };
 
-
-}  // namespace saltfish
-}  // namespace reinferio
+}}  // namespace saltfish::reinferio
 
 #endif  // REINFERIO_SALTFISH_SERVER_HPP

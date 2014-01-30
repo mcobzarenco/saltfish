@@ -140,15 +140,20 @@ class SaltfishTests(unittest.TestCase):
     def setUp(self):
         self._features = [
             {'name': 'timestamp_ms', 'type': source_pb2.Feature.REAL},
-            {'name': 'return_stock1', 'type': source_pb2.Feature.REAL},
-            {'name': 'logvol_stock1', 'type': source_pb2.Feature.REAL},
-            {'name': 'sector_stock1', 'type': source_pb2.Feature.CATEGORICAL}
+            {'name': 'return', 'type': source_pb2.Feature.REAL},
+            {'name': 'logvol', 'type': source_pb2.Feature.REAL},
+            {'name': 'sector', 'type': source_pb2.Feature.CATEGORICAL}
         ]
         self._records = [
             [103.31, 0.01, 97041., 'pharma'],
             [103.47, -0.31, 22440., 'telecomms'],
             [104.04, 0.41, 2145., 'tech'],
-            [102.40, -1.14, 21049., 'utilities']
+            [102.40, -1.14, 21049., 'utilities'],
+            [2.41, 8.134, 1049., 'some bullshit'],
+            [167.691, -13.14, 210349., 'some other bullshit'],
+            [341023.4320, -1000.14, 210249.0432543, 'defence'],
+            [5002.40, 0.0, 4919.2, 'energy'],
+            [1002.40, -1.14, 6156., 'cons disc'],
         ]
 
     def verify_created_source(self, source_id, request):
@@ -241,6 +246,7 @@ class SaltfishTests(unittest.TestCase):
         delete_response = self._service.delete_source(delete_request,
                                                       deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(DeleteSourceResponse.OK, delete_response.status)
+        self.assertEqual(True, delete_response.updated)
         self.assertEqual(0, len(SaltfishTests.fetch_source(source_id)))
 
         log.info('Making a 2nd identical delete_source call '
@@ -248,6 +254,7 @@ class SaltfishTests(unittest.TestCase):
         delete_response = self._service.delete_source(
             delete_request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(DeleteSourceResponse.OK, delete_response.status)
+        self.assertEqual(False, delete_response.updated)
         self.assertEqual(0, len(SaltfishTests.fetch_source(source_id)))
 
     def test_delete_source_invalid_ids(self):
@@ -301,16 +308,19 @@ class SaltfishTests(unittest.TestCase):
         put_req = make_put_records_req(source_id, records=self._records)
         put_resp = self._service.put_records(put_req,
                                              deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(service_pb2.PutRecordsResponse.OK, put_resp.status)
+        self.assertEqual(PutRecordsResponse.OK, put_resp.status)
         self.assertEqual(len(self._records), len(put_resp.record_ids))
         bucket = SOURCES_DATA_BUCKET_ROOT + str(uuid2hex(source_id))
-        for record_id in put_resp.record_ids:
+        print(put_resp.record_ids)
+        for i, record_id in enumerate(put_resp.record_ids):
             self.assertEqual(8, len(record_id))  # record_ids are int64_t
             log.info('Checking record at b=%s / k=%20s)' %
                      (bucket, bytes_to_int64(record_id)))
             remote = self._riakc.bucket(bucket).get(BinaryString(record_id))
             self.assertIsNotNone(remote.encoded_data)
-            log.info('Got message: "%s"' % put_resp.msg)
+            record = source_pb2.Record()
+            record.ParseFromString(remote.encoded_data)
+            self.assertEqual(put_req.records[i].record, record)
 
     def test_put_records_with_nonexistent_source(self):
         source_id = uuid.uuid4().get_bytes()
