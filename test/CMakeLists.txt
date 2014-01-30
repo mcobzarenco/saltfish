@@ -27,17 +27,33 @@ link_directories(${binary_dir})
 
 
 add_executable(
-  tests
+  test_service_utils
     test_service_utils.cpp
     ../src/service_utils.hpp
     ${source_dir}
 )
-add_dependencies(tests GTest)
-add_dependencies(tests GMock)
+add_dependencies(test_service_utils GTest)
+add_dependencies(test_service_utils GMock)
 target_link_libraries(
-  tests
+  test_service_utils
     gtest
     saltfish_service
+)
+
+add_executable(
+  test_tasklet
+    test_tasklet.cpp
+    ../src/tasklet.hpp
+    ${source_dir}
+)
+add_dependencies(test_tasklet GTest)
+add_dependencies(test_tasklet GMock)
+target_link_libraries(
+  test_tasklet
+    gtest
+    zmq
+    pthread
+    ${GLOG_LIBRARY}
 )
 
 
