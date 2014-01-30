@@ -146,19 +146,10 @@ TEST_F(CheckRecordTest, InvalidFeatureInSchema) {
   EXPECT_THAT(status.what(), testing::HasSubstr("problematic_feature"));
 }
 
-namespace {
-
-struct CountHandler {
-  void operator ()() { ++*calls_; }
-  int *calls_;
-};
-
-}
-
 TEST(ReplySyncTest, ReplyWithSuccess) {
-  constexpr uint32_t N_THREADS = 10;
-  int n_calls;
-  CountHandler handler{&n_calls};
+  constexpr uint32_t N_THREADS{10};
+  int n_calls{0};
+  auto handler = [&]() { ++n_calls; };
   saltfish::ReplySync replier{N_THREADS, handler};
 
   std::vector<std::thread> threads;
@@ -178,14 +169,14 @@ TEST(ReplySyncTest, ReplyWithSuccess) {
 }
 
 TEST(ReplySyncTest, ReplyWithError) {
-  constexpr uint32_t N_THREADS = 10;
+  constexpr uint32_t N_THREADS{10};
   int n_calls_success{0};
-  CountHandler handler_success{&n_calls_success};
+  auto handler_success = [&]() { ++n_calls_success; };
   saltfish::ReplySync replier{N_THREADS, handler_success};
 
   std::vector<std::thread> threads;
   int n_calls_error{0};
-  CountHandler handler_error{&n_calls_error};
+  auto handler_error = [&]() { ++n_calls_error; };
   auto report_error = [&replier, &handler_error]() {
     volatile int unused = 0;
     for (auto x = 0; x < 1000000; ++x) { ++unused; }
