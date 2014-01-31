@@ -43,8 +43,8 @@ TEST(TaskletTest, CallsHandlersCorrectly) {
     return s + s;
   };
   {
-    lib::Tasklet<string, string> task{context, handler, set_up, tear_down};
-    auto conn = task.connect();
+    lib::Tasklet task{context, set_up, tear_down};
+    auto conn = task.connect(handler);
     EXPECT_EQ(0, handler_called);
 
     EXPECT_EQ("abcabc", conn("abc"));
@@ -73,11 +73,11 @@ TEST(TaskletTest, CallsHandlersCorrectlyManyThreads) {
   };
   vector<thread> threads;
   {
-    lib::Tasklet<string, string> task{context, handler, set_up, tear_down};
+    lib::Tasklet task{context, set_up, tear_down};
     int count{0};
     while(++count <= N_THREADS) {
       threads.emplace_back([&]() {
-          auto conn = task.connect();
+          auto conn = task.connect(handler);
           EXPECT_EQ("abcabc", conn("abc"));
           EXPECT_EQ(1, set_up_called);
           EXPECT_EQ("", conn(""));

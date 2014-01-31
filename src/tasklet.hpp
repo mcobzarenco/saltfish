@@ -12,9 +12,16 @@
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <unordered_map>
 
 
 namespace reinferio { namespace lib {
+
+class Tasklet;
+template<typename Handler>
+class Connection;
+
+using Closure = std::function<void(void)>;
 
 inline std::string zmq_msg_to_str(const zmq::message_t& msg) {
   return std::string{reinterpret_cast<const char *>(msg.data()), msg.size()};
@@ -32,39 +39,22 @@ inline std::string generate_id(const uint32_t width=32) {
   return id;
 }
 
-template<typename Request, typename Response, typename Handler,
-         typename SetUpHook, typename TearDownHook>
-void task_loop(zmq::socket_t socket, Handler handler,
-               SetUpHook set_up, TearDownHook tear_down);
 
-template<typename Request, typename Response>
+inline void task_loop(zmq::socket_t socket, Closure set_up, Closure tear_down);
+
 class Tasklet {
  public:
-  class Connection {
-   public:
-    inline Response operator()(const Request& request);
-   protected:
-    inline Connection(zmq::context_t& context, const std::string endpoint);
-
-    zmq::socket_t socket_;
-    const std::string endpoint_;
-
-    friend class Tasklet;
-  };
-
-  template<typename Handler,
-           typename SetUpHook=void(*)(), typename TearDownHook=void(*)()>
   inline Tasklet(zmq::context_t& context,
-                 Handler handler,
-                 SetUpHook set_up = Tasklet<Request, Response>::do_nothing,
-                 TearDownHook tear_down = Tasklet<Request, Response>::do_nothing);
+                 Closure set_up = Tasklet::do_nothing,
+                 Closure tear_down = Tasklet::do_nothing);
   Tasklet(const Tasklet&) = delete;
   Tasklet& operator=(const Tasklet&) = delete;
 
   virtual ~Tasklet() { if(!stopped_) stop(); }
 
-  inline Connection connect();
-  inline const std::string& endpoint() { return endpoint_; }
+  template<typename Handler>
+  inline Connection<Handler> connect(const Handler& handler);
+  inline const std::string& endpoint() const { return endpoint_; }
   inline void stop();
 
   static void do_nothing() {}
@@ -75,84 +65,97 @@ class Tasklet {
   bool stopped_;
 };
 
-template<typename Request, typename Response>
-Tasklet<Request, Response>::Connection::Connection(
-    zmq::context_t& context, const std::string endpoint)
-    : socket_{context, ZMQ_REQ}, endpoint_{std::move(endpoint)} {
-  socket_.connect(endpoint_.c_str());
-}
-
-template<typename Request, typename Response>
-Response Tasklet<Request, Response>::Connection::operator()(
-    const Request& request) {
-  const Request* reqptr = &request;
-  zmq::message_t request_msg{sizeof(const Request*)};
-  std::memcpy(request_msg.data(), reinterpret_cast<const void*>(&reqptr),
-              sizeof(const Request*));
-  socket_.send(request_msg);
-  zmq::message_t resp_msg;
-  socket_.recv(&resp_msg);
-  std::unique_ptr<Response> resp{
-    *reinterpret_cast<Response* const *>(resp_msg.data())};
-  return Response{*resp};
-}
-
-template<typename Request, typename Response>
-template<typename Handler, typename SetUpHook, typename TearDownHook>
-Tasklet<Request, Response>::Tasklet(
-    zmq::context_t& context, Handler handler,
-    SetUpHook set_up, TearDownHook tear_down)
+Tasklet::Tasklet(zmq::context_t& context, Closure set_up, Closure tear_down)
     : context_{context},
       endpoint_{"inproc://" + generate_id()},
       stopped_{false} {
   zmq::socket_t socket{context, ZMQ_REP};
   socket.bind(endpoint_.c_str());
-  worker_.reset(new std::thread{
-      task_loop<Request, Response, Handler, SetUpHook, TearDownHook>,
-          std::move(socket), std::move(handler),
+  worker_.reset(new std::thread{task_loop, std::move(socket),
           std::move(set_up), std::move(tear_down)});
 }
 
-template<typename Request, typename Response>
-typename Tasklet<Request, Response>::Connection
-Tasklet<Request, Response>::connect() {
+template<typename Handler>
+Connection<Handler> Tasklet::connect(const Handler& handler) {
   CHECK(!stopped_) << "Task is stopped, cannot connect to it";
-  return Connection{context_, endpoint_.c_str()};
+  Connection<Handler> conn{context_, handler};
+  conn.connect(*this);
+  return conn;
 }
 
-template<typename Request, typename Response>
-void Tasklet<Request, Response>::stop() {
+void Tasklet::stop() {
   zmq::socket_t socket{context_, ZMQ_REQ};
-  zmq::message_t empty;
+  zmq::message_t empty{0};
   socket.connect(endpoint_.c_str());
   socket.send(empty);
   worker_->join();
   stopped_ = true;
 }
 
-template<typename Request, typename Response, typename Handler,
-         typename SetUpHook, typename TearDownHook>
-void task_loop(zmq::socket_t socket, Handler handler,
-                SetUpHook set_up, TearDownHook tear_down) {
+void task_loop(zmq::socket_t socket, Closure set_up, Closure tear_down) {
   set_up();
   while (true) {
     zmq::message_t request;
     socket.recv(&request);  // allow error_t to kill the thread
     if (request.size() == 0) break;
     try {
-      std::unique_ptr<Response> resp{new Response{
-          std::move(handler(**reinterpret_cast<Request* const *>(request.data())))}};
-      Response* respptr{resp.get()};
-      zmq::message_t reply{sizeof(Response*)};
-      std::memcpy(reply.data(), reinterpret_cast<const void*>(&respptr),
-                  sizeof(Response*));
-      socket.send(reply);
-      resp.release();
+      auto handler = *reinterpret_cast<Closure* const *>(request.data());
+      (*handler)();
+      zmq::message_t empty{0};
+      socket.send(empty);
     } catch(const zmq::error_t& error) {
       LOG(WARNING) << "Tasklet - REQ has went away";
     }
   }
   tear_down();
+}
+
+template<typename Handler>
+class Connection {
+ public:
+  Connection(zmq::context_t& context, Handler handler);
+  inline void connect(const Tasklet& tasklet);
+
+  template<typename ...Args>
+  auto operator()(Args&& ...args) ->
+      decltype(std::declval<Handler>()(std::forward<Args>(args)...));
+
+  const std::vector<std::string>& endpoints() const { return endpoints_; }
+ protected:
+  zmq::socket_t socket_;
+  Handler handler_;
+  std::vector<std::string> endpoints_;
+};
+
+template<typename Handler>
+Connection<Handler>::Connection(zmq::context_t& context, Handler handler)
+    : socket_{context, ZMQ_REQ}, handler_{std::move(handler)} { };
+
+template<typename Handler>
+inline void Connection<Handler>::connect(const Tasklet& tasklet) {
+  socket_.connect(tasklet.endpoint().c_str());
+  endpoints_.emplace_back(tasklet.endpoint());
+}
+
+template<typename Handler>
+template<typename ...Args>
+auto Connection<Handler>::operator()(Args&& ...args) ->
+    decltype(std::declval<Handler>()(std::forward<Args>(args)...)) {
+  using return_type =
+      decltype(std::declval<Handler>()(std::forward<Args>(args)...));
+  std::unique_ptr<return_type> result;
+  Closure closure = [&] {
+    result.reset(new return_type{handler_(std::forward<Args>(args)...)});
+  };
+  const Closure* closure_ptr = &closure;
+  zmq::message_t request_msg{sizeof(const Closure*)};
+  std::memcpy(request_msg.data(), reinterpret_cast<const void*>(&closure_ptr),
+              sizeof(const Closure*));
+  socket_.send(request_msg);
+  zmq::message_t resp_msg;
+  socket_.recv(&resp_msg);
+
+  return std::move(*result);
 }
 
 }}  // namespace reinferio::lib
