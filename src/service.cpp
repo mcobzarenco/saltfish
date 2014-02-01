@@ -137,12 +137,12 @@ inline std::function<int64_t()> init_uniform_distribution() noexcept {
 
 SaltfishServiceImpl::SaltfishServiceImpl(
     riak::client& riak_client,
-    sql::ConnectionFactory& sql_factory,
+    store::SourceMetadataSqlStoreTasklet& sql_store,
     boost::asio::io_service& ios,
     uint32_t max_generate_id_count,
     const string& sources_data_bucket_prefix)
     : riak_client_(riak_client),
-      sql_factory_(sql_factory),
+      sql_store_(sql_store),
       ios_(ios),
       uuid_generator_(),
       uniform_distribution_(init_uniform_distribution()),
@@ -166,9 +166,6 @@ void SaltfishServiceImpl::async_call_listeners(
 void SaltfishServiceImpl::create_source(
     const CreateSourceRequest& request,
     rpcz::reply<CreateSourceResponse> reply) {
-  static constexpr char CREATE_SOURCE_TEMPLATE[] =
-      "INSERT INTO sources (source_id, user_id, source_schema, name) "
-      "VALUES (?, ?, ?, ?)";
   const auto& source = request.source();
   if (schema_has_duplicates(source.schema())) {
     reply_with_status(CreateSourceResponse::DUPLICATE_FEATURE_NAME, reply);
@@ -192,10 +189,8 @@ void SaltfishServiceImpl::create_source(
             << uuid_bytes_to_hex(source_id)
             << ", schema='" << source.schema().ShortDebugString() << "')";
   try {
-    auto conn = sql_factory_.new_connection();
     if (!new_source_id) {
-      boost::optional<string> remote_schema =
-          sql::fetch_source_schema(conn.get(), source_id);
+      auto remote_schema = sql_store_.fetch_schema(source_id);
       if (remote_schema) {
         if (*remote_schema == request.source().schema().SerializeAsString()) {
           // Trying to create a source that already exists with identical schema
@@ -214,13 +209,8 @@ void SaltfishServiceImpl::create_source(
         }
       }
     }
-    unique_ptr< ::sql::PreparedStatement > query{
-      conn->prepareStatement(CREATE_SOURCE_TEMPLATE)};
-    query->setString(1, source_id);
-    query->setInt(2, source.user_id());
-    query->setString(3, source.schema().SerializeAsString());
-    query->setString(4, source.name());
-    query->executeUpdate();
+    sql_store_.create_source(source_id, source.user_id(),
+                             source.schema().SerializeAsString(), source.name());
 
     async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
     CreateSourceResponse response;
@@ -239,19 +229,12 @@ void SaltfishServiceImpl::create_source(
 void SaltfishServiceImpl::delete_source(
     const DeleteSourceRequest& request,
     rpcz::reply<DeleteSourceResponse> reply) {
-  static constexpr char DELETE_SOURCE_TEMPLATE[] =
-      "DELETE FROM sources WHERE source_id = ?";
-
   const string& source_id = request.source_id();
   if (source_id.size() == boost::uuids::uuid::static_size()) {
     VLOG(0) << "delete_source(source_id="
             << boost::uuids::to_string(from_string(source_id)) << ")";
     try {
-      auto conn = sql_factory_.new_connection();
-      unique_ptr< ::sql::PreparedStatement > query{
-        conn->prepareStatement(DELETE_SOURCE_TEMPLATE)};
-      query->setString(1, source_id);
-      auto rows_updated = query->executeUpdate();
+      auto rows_updated = sql_store_.delete_source(source_id);
       CHECK(rows_updated == 0 || rows_updated == 1)
           << "source_id is a primary key, a max of 1 row can be affected";
       if (rows_updated == 0) {
@@ -381,8 +364,7 @@ void SaltfishServiceImpl::put_records(
     return;
   }
   try {
-    auto conn = sql_factory_.new_connection();
-    auto schema_str = sql::fetch_source_schema(conn.get(), source_id);
+    auto schema_str = sql_store_.fetch_schema(source_id);
     if (!schema_str) {
       VLOG(0) << "Received put_records request for non-existent source; id="
               << uuid_bytes_to_hex(source_id);

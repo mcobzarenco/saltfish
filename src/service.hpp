@@ -39,7 +39,7 @@ class SaltfishServiceImpl : public SaltfishService {
  public:
   SaltfishServiceImpl(
       riak::client& riak_client,
-      sql::ConnectionFactory& sql_factory,
+      store::SourceMetadataSqlStoreTasklet& sql_store,
       boost::asio::io_service& ios,
       uint32_t max_generate_id_count,
       const std::string& sources_data_bucket_prefix);
@@ -79,7 +79,7 @@ class SaltfishServiceImpl : public SaltfishService {
   std::vector<std::string> ids_for_put_request(const PutRecordsRequest& request);
 
   riak::client& riak_client_;
-  sql::ConnectionFactory& sql_factory_;
+  store::SourceMetadataSqlStoreTasklet& sql_store_;
   boost::asio::io_service& ios_;
 
   boost::uuids::random_generator uuid_generator_;

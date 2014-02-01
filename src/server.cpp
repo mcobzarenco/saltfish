@@ -16,13 +16,12 @@ using namespace std::placeholders;
 
 SaltfishServer::SaltfishServer(const config::Saltfish& config)
     : config_(config), signal_ios_(), signal_thread_(),
-      ios_(), work_(new boost::asio::io_service::work(ios_)),
+      ios_(), work_(new boost::asio::io_service::work(ios_)), context_(1),
       application_(), server_(application_),
       //      riak_client_(config.riak().host(), config.riak().port(), ios_),
       riak_client_(config.riak().host(), config.riak().port()),
-      // sql_factory_(config.maria_db().host(), config.maria_db().user(),
-      //              config.maria_db().password(), config.maria_db().db()),
-      sql_factory_(unique_ptr<sql::ConnectionFactory>{new sql::ConnectionFactory{config.maria_db().host(), config.maria_db().user(), config.maria_db().password(), config.maria_db().db()}}),
+      sql_store_(context_, config.maria_db().host(), config.maria_db().user(),
+                 config.maria_db().password(), config.maria_db().db()),
       rabbit_pub_(config.rabbit_mq().host(), config.rabbit_mq().port(),
                   config.rabbit_mq().user(), config.rabbit_mq().password()) {
   for(int i = 0; i < 5; ++i) {
@@ -36,7 +35,6 @@ SaltfishServer::SaltfishServer(const config::Saltfish& config)
 }
 
 SaltfishServer::~SaltfishServer() noexcept {
-  sql_factory_.reset();
   if (signal_thread_ != nullptr) {
     signal_ios_.stop();
     signal_thread_->join();
@@ -51,7 +49,7 @@ SaltfishServer::~SaltfishServer() noexcept {
 void SaltfishServer::run() noexcept {
   try {
     saltfish::SaltfishServiceImpl saltfish_serv(
-        riak_client_, *sql_factory_, ios_,
+        riak_client_, sql_store_, ios_,
         config_.max_generate_id_count(),
         config_.sources_data_bucket_prefix());
     auto rmq_listener = bind(&RabbitPublisher::publish, &rabbit_pub_, _1, _2);

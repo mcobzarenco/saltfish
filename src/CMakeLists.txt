@@ -35,6 +35,7 @@ target_link_libraries(
   sql_pool
     mysqlclient
     mysqlcppconn
+    zmq
 )
 
 add_library(

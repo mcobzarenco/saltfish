@@ -5,10 +5,11 @@
 #include "publishers.hpp"
 #include "config.pb.h"
 
-#include <boost/asio.hpp>
-#include <glog/logging.h>
 #include <riakpp/client.hpp>
 #include <rpcz/rpcz.hpp>
+#include <glog/logging.h>
+#include <zmq.hpp>
+#include <boost/asio.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -43,10 +44,11 @@ class SaltfishServer {
   std::unique_ptr<boost::asio::io_service::work> work_;
   std::vector<std::thread> threads_;
 
+  zmq::context_t context_;
   rpcz::application application_;
   rpcz::server server_;
   riak::client riak_client_;
-  std::unique_ptr<sql::ConnectionFactory> sql_factory_;
+  store::SourceMetadataSqlStoreTasklet sql_store_;
   RabbitPublisher rabbit_pub_;
 };
 
