@@ -7,12 +7,10 @@
 #include <chrono>
 #include <cstring>
 #include <functional>
-#include <iostream>
 #include <random>
 #include <string>
 #include <thread>
 #include <type_traits>
-#include <unordered_map>
 
 
 namespace reinferio { namespace lib {
@@ -39,7 +37,6 @@ inline std::string generate_id(const uint32_t width=32) {
   return id;
 }
 
-
 inline void task_loop(zmq::socket_t socket, Closure set_up, Closure tear_down);
 
 class Tasklet {
@@ -53,7 +50,7 @@ class Tasklet {
   virtual ~Tasklet() { if(!stopped_) stop(); }
 
   template<typename Handler>
-  inline Connection<Handler> connect(const Handler& handler);
+  inline Connection<Handler> connect(Handler handler);
   inline const std::string& endpoint() const { return endpoint_; }
   inline void stop();
 
@@ -76,32 +73,40 @@ Tasklet::Tasklet(zmq::context_t& context, Closure set_up, Closure tear_down)
 }
 
 template<typename Handler>
-Connection<Handler> Tasklet::connect(const Handler& handler) {
+Connection<Handler> Tasklet::connect(Handler handler) {
   CHECK(!stopped_) << "Task is stopped, cannot connect to it";
-  Connection<Handler> conn{context_, handler};
+  Connection<Handler> conn{context_, std::move(handler)};
   conn.connect(*this);
   return conn;
 }
 
 void Tasklet::stop() {
-  zmq::socket_t socket{context_, ZMQ_REQ};
-  zmq::message_t empty{0};
-  socket.connect(endpoint_.c_str());
-  socket.send(empty);
-  worker_->join();
-  stopped_ = true;
+  if (!stopped_) {
+    zmq::socket_t socket{context_, ZMQ_REQ};
+    zmq::message_t empty;
+    socket.connect(endpoint_.c_str());
+    socket.send(empty);
+    worker_->join();
+    stopped_ = true;
+  }
 }
 
 void task_loop(zmq::socket_t socket, Closure set_up, Closure tear_down) {
   set_up();
   while (true) {
     zmq::message_t request;
-    socket.recv(&request);  // allow error_t to kill the thread
-    if (request.size() == 0) break;
     try {
-      auto handler = *reinterpret_cast<Closure* const *>(request.data());
-      (*handler)();
-      zmq::message_t empty{0};
+      socket.recv(&request);  // allow error_t to kill the thread
+    } catch(const zmq::error_t& error) {
+      LOG(WARNING) << "Tasklet - could not receive message.. exiting";
+      tear_down();
+      return;
+    }
+    if (request.size() == 0) break;
+    auto handler = *reinterpret_cast<Closure* const *>(request.data());
+    (*handler)();
+    try {
+      zmq::message_t empty;
       socket.send(empty);
     } catch(const zmq::error_t& error) {
       LOG(WARNING) << "Tasklet - REQ has went away";
@@ -154,7 +159,6 @@ auto Connection<Handler>::operator()(Args&& ...args) ->
   socket_.send(request_msg);
   zmq::message_t resp_msg;
   socket_.recv(&resp_msg);
-
   return std::move(*result);
 }
 
