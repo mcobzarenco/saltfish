@@ -13,12 +13,14 @@
 #include <mysql_driver.h>
 #include <mysql_connection.h>
 
+#include <algorithm>
 #include <chrono>
 #include <functional>
-#include <thread>
-#include <sstream>
-#include <set>
 #include <random>
+#include <set>
+#include <sstream>
+#include <thread>
+#include <vector>
 
 
 namespace reinferio { namespace saltfish {
@@ -323,22 +325,22 @@ void put_records_put_handler(shared_ptr<ReplySync> replier,
   }
 }
 
-void put_records_get_handler(riak::client& riak_client,
-                             const source::Record record,
-                             const int64_t index_value,
-                             shared_ptr<ReplySync> replier,
-                             rpcz::reply<PutRecordsResponse> reply,
-                             riak::object object,
-                             const error_code error) {
+void put_records_get_handler(
+    riak::client& riak_client, const source::Record record,
+    const int64_t index_value, shared_ptr<ReplySync> replier,
+    rpcz::reply<PutRecordsResponse> reply,
+    riak::object object, const error_code error) {
   if (!error) {
-    record.SerializeToString(&object.value());
     // auto* index = new_record->add_indexes();
     // index->set_key("randomindex_int");
     // index->set_value(to_string(index_value).c_str());
+    record.SerializeToString(&object.value());
     auto handler = bind(&put_records_put_handler, replier, reply, _1);
     riak_client.store(object, function<void(const error_code)>{handler});
   } else {
-    replier->error([&reply] () {
+    LOG(WARNING) << "Trying fetch() from Riak got error_code="  << error;
+    replier->error([reply] () mutable {
+        LOG(INFO) << "REPLYING WITH ERROR";
         reply_with_status(PutRecordsResponse::NETWORK_ERROR, reply,
                           "Could not connect to the storage backend");
       });
@@ -369,9 +371,10 @@ void SaltfishServiceImpl::put_records(
       VLOG(0) << "Received put_records request for non-existent source; id="
               << uuid_bytes_to_hex(source_id);
       stringstream msg;
-      msg << "Source does not exist (id="
+      msg << "Trying to put records into non-existent source (id="
           << uuid_bytes_to_hex(source_id) << ")";
-      reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply);
+      reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
+                        msg.str().c_str());
       return;
     }
     source::Schema schema;
@@ -400,23 +403,31 @@ void SaltfishServiceImpl::put_records(
       for (const auto& rid : record_ids) response.add_record_ids(rid);
       reply.send(response);
     };
-    auto replier = make_shared<ReplySync>(
-        request.records_size(), reply_success);
+    stringstream bucket_ss;
+    bucket_ss << sources_data_bucket_prefix_ << uuid_bytes_to_hex(source_id);
+    string bucket{bucket_ss.str()};
+
+    auto replier = make_shared<ReplySync>(request.records_size(), reply_success);
+    vector<function<void()>> fetch_closures;
+    fetch_closures.reserve(request.records_size());
     for (auto i = 0; i < request.records_size(); ++i) {
       const auto& record_id = record_ids[i];
       const auto& record = request.records(i).record();
       auto handler = bind(&put_records_get_handler, ref(riak_client_), record,
                           *reinterpret_cast<const int64_t*>(record_id.c_str()),
                           replier, reply, _1,  _2);
-      ostringstream bucket;
-      bucket << sources_data_bucket_prefix_
-             << uuid_bytes_to_hex(source_id);
-      VLOG(0) << "Queueing put_record @ (b=" << bucket.str()
+
+      VLOG(0) << "Queueing put_record @ (b=" << bucket
               << " k=" << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
       // riak_client_.fetch(bucket.str(), record_id, handler);
-      riak_client_.fetch(bucket.str(), record_id,
-                         function<void(riak::object, const error_code)>{handler});
+      fetch_closures.emplace_back([this, bucket, record_id, handler] () {
+          this->riak_client_.fetch(bucket, record_id,
+                                   function<void(riak::object, const error_code)>{handler});
+        });
     }
+    for_each(fetch_closures.begin(), fetch_closures.end(),
+             [](function<void()>& closure) { closure(); });
+
     // async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
   } catch (const ::sql::SQLException& e) {
     LOG(ERROR) << "create_source() query error: " << e.what();
