@@ -338,7 +338,10 @@ void put_records_get_handler(
     auto handler = bind(&put_records_put_handler, replier, reply, _1);
     riak_client.store(object, function<void(const error_code)>{handler});
   } else {
-    LOG(WARNING) << "Trying fetch() from Riak got error_code="  << error;
+    LOG(WARNING) << "Trying fetch() from Riak bucket=" << object.bucket()
+                 << " key="
+                 << *reinterpret_cast<const int64_t*>(object.key().data())
+                 <<" got error_code="  << error;
     replier->error([reply] () mutable {
         LOG(INFO) << "REPLYING WITH ERROR";
         reply_with_status(PutRecordsResponse::NETWORK_ERROR, reply,
