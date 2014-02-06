@@ -1,0 +1,136 @@
+package reinferio.saltfish;
+
+import "source.proto";
+
+
+/*****************     SourceManagerService::create_source    *****************/
+
+message CreateSourceRequest {
+  optional reinferio.source.Source source = 1;
+}
+
+message CreateSourceResponse {
+  enum Status {
+    UNKNOWN_ERROR = 0;
+    OK = 1;
+    DUPLICATE_FEATURE_NAME = 2;
+    SOURCE_ID_ALREADY_EXISTS = 3;
+    INVALID_SOURCE_ID = 4;
+    NETWORK_ERROR = 5;
+  }
+  optional Status status = 1;
+  optional string msg = 2;
+
+  optional bytes source_id = 3;
+}
+
+/*****************     SourceManagerService::delete_source    *****************/
+
+message DeleteSourceRequest {
+  required bytes source_id = 1;
+}
+
+message DeleteSourceResponse {
+  enum Status {
+    UNKNOWN_ERROR = 0;
+    OK = 1;
+    INVALID_SOURCE_ID = 2;
+    NETWORK_ERROR = 3;
+  }
+  optional Status status = 1;
+  optional string msg = 2;
+  optional bool updated = 3;
+}
+
+/*****************      SourceManagerService::generate_id     *****************/
+
+message GenerateIdRequest {
+  enum IdType {
+    INVALID = 0;
+    SOURCE = 1;
+    ROW = 2;
+  }
+  optional IdType id_type = 1;
+  optional uint32 count = 2;
+}
+
+message GenerateIdResponse {
+  enum Status {
+    UNKNOWN_ERROR = 0;
+    OK = 1;
+    COUNT_TOO_LARGE = 2;
+  }
+  optional Status status = 1;
+  optional string msg = 2;
+  repeated bytes ids = 3;
+}
+
+/*****************      SourceManagerService::put_records     *****************/
+
+message PutRecordsRequest {
+  message TaggedRecord {
+    optional bytes record_id = 1;
+    optional reinferio.source.Record record = 2;
+  }
+  required bytes source_id = 1;
+  repeated TaggedRecord records = 2;
+}
+
+message PutRecordsResponse {
+  enum Status {
+    UNKNOWN_ERROR = 0;
+    OK = 1;
+    INVALID_SCHEMA = 2;
+    INVALID_SOURCE_ID = 3;
+    NO_RECORDS_IN_REQUEST = 4;
+    INVALID_RECORD = 5;
+    NETWORK_ERROR = 6;
+  }
+  optional Status status = 1;
+  optional string msg = 2;
+
+  repeated bytes record_ids = 3;
+}
+
+/*****************            SourceManagerService            *****************/
+
+enum RequestType {
+    UNKNOWN_REQUEST = 0;
+    ALL = 1;
+    CREATE_SOURCE = 2;
+    DELETE_SOURCE = 3;
+    GENERATE_ID = 4;
+    PUT_RECORDS = 5;
+}
+
+service SourceManagerService  {
+  rpc create_source(CreateSourceRequest) returns (CreateSourceResponse);
+  rpc delete_source(DeleteSourceRequest) returns (DeleteSourceResponse);
+  rpc generate_id(GenerateIdRequest) returns (GenerateIdResponse);
+  rpc put_records(PutRecordsRequest) returns (PutRecordsResponse);
+}
+
+/*****************     SourceSamplerService::sample_source    *****************/
+
+message SampleSourceRequest {
+  optional bytes source_id = 1;
+  optional uint32 max_count = 2;
+}
+
+message SampleSourceResponse {
+  enum Status {
+    UNKNOWN_ERROR = 0;
+    OK = 1;
+    NETWORK_ERROR = 2;
+  }
+  optional Status status = 1;
+  optional string msg = 2;
+
+  repeated reinferio.source.Record records = 3;
+}
+
+/*****************            SourceSamplerService            *****************/
+
+service SourceSamplerService  {
+  rpc sample_source(SampleSourceRequest) returns (SampleSourceResponse);
+}
