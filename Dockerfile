@@ -64,5 +64,6 @@ RUN cd /src/saltfish/build &&  cmake .. && make -j4 && make install
 RUN /src/saltfish/build/test/test_service_utils
 RUN /src/saltfish/build/test/test_tasklet
 
+
 ENTRYPOINT saltfish
 CMD saltfish -h
