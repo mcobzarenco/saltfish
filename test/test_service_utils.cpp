@@ -4,13 +4,12 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -18,15 +17,33 @@
 using namespace std;
 using namespace reinferio;
 
-TEST(IsValidUuidBytesTest, IsValidUuidBytes) {
-  string u1;
-  EXPECT_FALSE(saltfish::is_valid_uuid_bytes(u1));
+TEST(GenerateRandomString, CorrectFormat) {
+  constexpr uint32_t N = 100;
+  constexpr char hex[] = "0123456789abcdef";
+  const unordered_set<char> hex_chars{hex, hex + sizeof(hex)};
+  unordered_set<char> chars;
+  string id, hex_id;
+  for (uint32_t width = 8; width < N + 10; width+=8) {
+    id = saltfish::gen_random_string(width);
+    hex_id = saltfish::string_to_hex(id);
+    chars.insert(id.begin(), id.end());
+    EXPECT_EQ(width, id.size()) << hex_id;
+    EXPECT_EQ(2 * width, hex_id.size()) << hex_id;
+    EXPECT_TRUE(all_of(hex_id.begin(), hex_id.end(), [&hex_chars](const char c) {
+          return hex_chars.count(c) != 0;
+        })) << hex_id;
+  }
 
-  string u2{"\x00\x01\x02\x03\x04\x05\x06", 7};
-  EXPECT_FALSE(saltfish::is_valid_uuid_bytes(u2));
+  string test_id{" abcdefghijklmnop"};
+  EXPECT_EQ("206162636465666768696a6b6c6d6e6f70",
+            saltfish::string_to_hex(test_id));
+}
 
-  string u3{"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f", 16};
-  EXPECT_TRUE(saltfish::is_valid_uuid_bytes(u3));
+TEST(GenerateRandomString, GeneratesUniqueStrings) {
+  const uint32_t N = 1000000;
+  unordered_set<string> ids;
+  for (uint32_t n = 0; n < N; ++n)  ids.insert(saltfish::gen_random_string());
+  EXPECT_EQ(N, ids.size());
 }
 
 TEST(SchemaHasDuplicatesTest, EmptyNoDupsAndDups) {

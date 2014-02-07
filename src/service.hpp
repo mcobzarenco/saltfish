@@ -8,23 +8,19 @@
 #include <rpcz/rpcz.hpp>
 #include <riakpp/client.hpp>
 #include <boost/asio.hpp>
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
 
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <system_error>
 #include <string>
 #include <vector>
+
 
 namespace riak {
 class client;
 }
 
 namespace reinferio { namespace saltfish {
-
-using uuid_t = boost::uuids::uuid;
 
 class SaltfishService : public SourceManagerService {
  public:
@@ -73,19 +69,12 @@ class SaltfishServiceImpl : public SaltfishService {
   };
   inline void async_call_listeners(
       RequestType req_type, const std::string& request);
-
-  inline int64_t generate_random_index();
-  inline uuid_t generate_uuid();
-  std::vector<std::string> ids_for_put_request(const PutRecordsRequest& request);
+  inline std::vector<std::string> ids_for_put_request(
+      const PutRecordsRequest& request);
 
   riak::client& riak_client_;
   store::SourceMetadataSqlStoreTasklet& sql_store_;
   boost::asio::io_service& ios_;
-
-  boost::uuids::random_generator uuid_generator_;
-  std::mutex uuid_generator_mutex_;
-  std::function<int64_t()> uniform_distribution_;
-  std::mutex uniform_distribution_mutex_;
 
   uint32_t max_generate_id_count_;
   const std::string sources_data_bucket_prefix_;

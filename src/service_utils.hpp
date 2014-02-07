@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -26,21 +27,34 @@
 
 namespace reinferio { namespace saltfish {
 
-inline bool is_valid_uuid_bytes(const std::string& id) {
-  return boost::uuids::uuid::static_size() == id.size();
+inline std::string gen_random_string(const uint32_t width=16) {
+  static const size_t BLOCK_SIZE = sizeof(uint64_t);
+  static thread_local std::mt19937_64 gen(
+      std::chrono::high_resolution_clock::now().time_since_epoch().count() +
+      static_cast<const uint64_t>(reinterpret_cast<const size_t>(&width)));
+  CHECK_EQ(0, width % BLOCK_SIZE)
+      << "width needs to be a multiple of " << BLOCK_SIZE;
+  uint64_t uniform{0};
+  std::string id;
+  id.reserve(width);
+  for (uint32_t i = 0; i < width; i += BLOCK_SIZE) {
+    uniform = gen();
+    id.append(reinterpret_cast<const char*>(&uniform),
+              BLOCK_SIZE / sizeof(const char));
+  }
+  return id;
 }
 
-inline boost::uuids::uuid from_string(const std::string& s) {
-  CHECK(is_valid_uuid_bytes(s))
-      << "a uuid has exactly " << boost::uuids::uuid::static_size()
-      << " bytes != " << s.size();
-  boost::uuids::uuid uuid;
-  copy(s.begin(), s.end(), uuid.begin());
-  return uuid;
+inline int64_t gen_random_int64() {
+  std::string id = gen_random_string(sizeof(uint64_t));
+  return *reinterpret_cast<const int64_t*>(id.data());
 }
 
-inline std::string uuid_bytes_to_hex(const std::string& id) {
-  return boost::uuids::to_string(from_string(id));
+inline std::string string_to_hex(const std::string& source_id) {
+  constexpr char hex[]{"0123456789abcdef"};
+  std::stringstream out;
+  for (const unsigned char& c : source_id)  out << hex[c >> 4] << hex[c & 0x0F];
+  return out.str();
 }
 
 inline bool schema_has_duplicates(const source::Schema& schema){
@@ -139,29 +153,6 @@ void ReplySync::error(Postlude error_handler) {
   error_handler();
 }
 
-
-namespace sql {
-
-inline boost::optional<std::string> fetch_source_schema(
-    ::sql::Connection* conn, const std::string& source_id) {
-  static constexpr char GET_SOURCE_TEMPLATE[] =
-      "SELECT source_id, user_id, source_schema, name FROM sources "
-      "WHERE source_id = ?";
-  std::unique_ptr< ::sql::PreparedStatement > get_query{
-    conn->prepareStatement(GET_SOURCE_TEMPLATE)};
-  get_query->setString(1, source_id);
-  std::unique_ptr< ::sql::ResultSet > res{get_query->executeQuery()};
-  if (res->rowsCount() > 0) {
-    CHECK(res->rowsCount() == 1)
-        << "Integrity constraint violated, source_id is a primary key";
-    VLOG(0) << "source_id already exists";
-    res->next();
-    return boost::optional<std::string>{res->getString("source_schema")};
-  }
-  return boost::optional<std::string>();
-}
-
-}  // namespace sql
 }}  // namespace reinferio::saltfish
 
 #endif  // REINFERIO_SALTFISH_SERVICE_UTILS_HPP

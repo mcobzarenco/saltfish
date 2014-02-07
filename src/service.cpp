@@ -4,7 +4,6 @@
 
 #include <riakpp/connection.hpp>
 #include <glog/logging.h>
-#include <boost/uuid/uuid_io.hpp>
 #include <boost/optional.hpp>
 
 #include <cppconn/exception.h>
@@ -28,13 +27,15 @@ namespace reinferio { namespace saltfish {
 using namespace std;
 using namespace std::placeholders;
 
-//  Error messages:
-constexpr char UNKNOWN_ERROR_MESSAGE[] =
-    "Unknown error status: must likely using protobufs with mismatched versions.";
-constexpr char NETWORK_ERROR_MESSAGE[] =
-    "Internal error: could not connect to the storage backend.";
-
 namespace { //  Some utility functions
+
+constexpr uint32_t SOURCE_ID_WIDTH{16};
+
+//  Error messages:
+constexpr char UNKNOWN_ERROR_MESSAGE[]{
+  "Unknown error status: must likely using protobufs with mismatched versions."};
+constexpr char NETWORK_ERROR_MESSAGE[]{
+  "Internal error: could not connect to the storage backend."};
 
 template<typename Response>
 inline vector<const char*> make_error_messages(
@@ -126,14 +127,6 @@ inline void reply_with_status(
     send_reply(reply, status,  error_messages[status]);
 }
 
-inline std::function<int64_t()> init_uniform_distribution() noexcept {
-  long seed{chrono::system_clock::now().time_since_epoch().count()};
-  default_random_engine generator{seed};
-  uniform_int_distribution<int64_t> distribution{
-    numeric_limits<int64_t>::min(), numeric_limits<int64_t>::max()};
-  return bind(distribution, generator);
-}
-
 } //  anonymous namespace
 
 
@@ -143,13 +136,11 @@ SaltfishServiceImpl::SaltfishServiceImpl(
     boost::asio::io_service& ios,
     uint32_t max_generate_id_count,
     const string& sources_data_bucket_prefix)
-    : riak_client_(riak_client),
-      sql_store_(sql_store),
-      ios_(ios),
-      uuid_generator_(),
-      uniform_distribution_(init_uniform_distribution()),
-      max_generate_id_count_(max_generate_id_count),
-      sources_data_bucket_prefix_(sources_data_bucket_prefix) {
+    :  riak_client_{riak_client},
+       sql_store_{sql_store},
+       ios_{ios},
+       max_generate_id_count_{max_generate_id_count},
+       sources_data_bucket_prefix_{sources_data_bucket_prefix} {
 }
 
 void SaltfishServiceImpl::async_call_listeners(
@@ -177,10 +168,9 @@ void SaltfishServiceImpl::create_source(
   bool new_source_id{false};
   if (source.source_id().empty()) {
     LOG(INFO) << "create_source() request source_id not set, generating one" ;
-    boost::uuids::uuid uuid = generate_uuid();
-    source_id.assign(uuid.begin(), uuid.end());
+    source_id = gen_random_string(SOURCE_ID_WIDTH);
     new_source_id = true;
-  } else if (is_valid_uuid_bytes(source.source_id())) {
+  } else if (source.source_id().size() == SOURCE_ID_WIDTH) {
     source_id = source.source_id();
   } else {
     LOG(INFO) << "create_source() invalid source_id";
@@ -188,7 +178,7 @@ void SaltfishServiceImpl::create_source(
     return;
   }
   LOG(INFO) << "create_source() inserting source (id="
-            << uuid_bytes_to_hex(source_id)
+            << string_to_hex(source_id)
             << ", schema='" << source.schema().ShortDebugString() << "')";
   try {
     if (!new_source_id) {
@@ -205,7 +195,7 @@ void SaltfishServiceImpl::create_source(
         } else {
           LOG(INFO) << "A source with the same id, but different schema "
                     << "already exists (source_id="
-                    << uuid_bytes_to_hex(source_id) << ")";
+                    << string_to_hex(source_id) << ")";
           reply_with_status(CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
           return;
         }
@@ -233,8 +223,7 @@ void SaltfishServiceImpl::delete_source(
     rpcz::reply<DeleteSourceResponse> reply) {
   const string& source_id = request.source_id();
   if (source_id.size() == boost::uuids::uuid::static_size()) {
-    VLOG(0) << "delete_source(source_id="
-            << boost::uuids::to_string(from_string(source_id)) << ")";
+    VLOG(0) << "delete_source(source_id=" << string_to_hex(source_id) << ")";
     try {
       auto rows_updated = sql_store_.delete_source(source_id);
       CHECK(rows_updated == 0 || rows_updated == 1)
@@ -261,11 +250,6 @@ void SaltfishServiceImpl::delete_source(
 
 /***********                       generate_id                      ***********/
 
-uuid_t SaltfishServiceImpl::generate_uuid() {
-  lock_guard<mutex> generate_uuid_lock(uuid_generator_mutex_);
-  return uuid_generator_();
-}
-
 void SaltfishServiceImpl::generate_id(
     const GenerateIdRequest& request,
     rpcz::reply<GenerateIdResponse> reply) {
@@ -274,7 +258,7 @@ void SaltfishServiceImpl::generate_id(
   if(request.count() < max_generate_id_count_) {
     response.set_status(GenerateIdResponse::OK);
     for(uint32_t i = 0; i < request.count(); ++i) {
-      response.add_ids(boost::uuids::to_string(generate_uuid()));
+      response.add_ids(gen_random_string(SOURCE_ID_WIDTH));
     }
   } else {
     response.set_status(GenerateIdResponse::COUNT_TOO_LARGE);
@@ -288,19 +272,13 @@ void SaltfishServiceImpl::generate_id(
 
 /***********                       put_records                      ***********/
 
-int64_t SaltfishServiceImpl::generate_random_index() {
-  std::lock_guard<std::mutex>
-      uniform_distribution_lock(uniform_distribution_mutex_);
-  return uniform_distribution_();
-}
-
 vector<string> SaltfishServiceImpl::ids_for_put_request(
     const PutRecordsRequest& request) {
   vector<string> record_ids;
   for (auto i = 0; i < request.records_size(); ++i) {
     auto tag_record = request.records(i);
     if (tag_record.record_id().empty()) {
-      const int64_t index = generate_random_index();
+      const int64_t index = gen_random_int64();
       record_ids.emplace_back(
           reinterpret_cast<const char *>(&index), sizeof(int64_t));
     } else if (tag_record.record_id().size() == sizeof(int64_t)) {
@@ -357,8 +335,7 @@ void SaltfishServiceImpl::put_records(
     rpcz::reply<PutRecordsResponse> reply) {
   const auto& source_id = request.source_id();
   const uint32_t n_records = request.records_size();
-  // LOG(INFO) << request.DebugString();
-  if (!is_valid_uuid_bytes(source_id)) {
+  if (source_id.size() != SOURCE_ID_WIDTH) {
     VLOG(0) << "Got put_records request with an invalid source id";
     reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
                       "The source id provided is invalid.");
@@ -372,10 +349,10 @@ void SaltfishServiceImpl::put_records(
     auto schema_str = sql_store_.fetch_schema(source_id);
     if (!schema_str) {
       VLOG(0) << "Received put_records request for non-existent source; id="
-              << uuid_bytes_to_hex(source_id);
+              << string_to_hex(source_id);
       stringstream msg;
       msg << "Trying to put records into non-existent source (id="
-          << uuid_bytes_to_hex(source_id) << ")";
+          << string_to_hex(source_id) << ")";
       reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
                         msg.str().c_str());
       return;
@@ -407,7 +384,7 @@ void SaltfishServiceImpl::put_records(
       reply.send(response);
     };
     stringstream bucket_ss;
-    bucket_ss << sources_data_bucket_prefix_ << uuid_bytes_to_hex(source_id);
+    bucket_ss << sources_data_bucket_prefix_ << string_to_hex(source_id);
     string bucket{bucket_ss.str()};
 
     auto replier = make_shared<ReplySync>(request.records_size(), reply_success);
