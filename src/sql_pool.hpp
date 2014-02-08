@@ -20,38 +20,20 @@ class Connection;
 
 namespace reinferio { namespace saltfish { namespace store {
 
-class ConnectionFactory {
- public:
-  ConnectionFactory(const std::string& host, const std::string& user,
-                    const std::string& pass, const std::string& db);
-
-  std::unique_ptr< ::sql::Connection > new_connection();
- private:
-  std::mutex driver_mutex_;
-  ::sql::Driver* driver_;
-  const std::string host_;
-  const std::string user_;
-  const std::string pass_;
-  const std::string db_;
-};
-
 std::unique_ptr<sql::Connection> connect_to_sql(
     const std::string& host, const std::string& user,
     const std::string& pass, const std::string& db);
 
 class SourceMetadataStore {
  public:
-  virtual void connect() {}
-  virtual void close() {}
-
-  virtual boost::optional<std::string> fetch_schema(
+  virtual boost::optional<std::vector<std::string>> fetch_schema(
       const std::string& source_id) = 0;
 
-  virtual int create_source(
+  virtual boost::optional<int> create_source(
       const std::string& source_id, int user_id,
       const std::string& schema, const std::string& name) = 0;
 
-  virtual int delete_source(const std::string& source_id) = 0;
+  virtual boost::optional<int> delete_source(const std::string& source_id) = 0;
 };
 
 class SourceMetadataSqlStore : SourceMetadataStore {
@@ -59,15 +41,18 @@ class SourceMetadataSqlStore : SourceMetadataStore {
   SourceMetadataSqlStore (const std::string& host, const std::string& user,
                          const std::string& pass, const std::string& db,
                          bool thread_init_end = true);
-  virtual void connect();
-  virtual void close();
+  ~SourceMetadataSqlStore() { close(); }
 
-  virtual boost::optional<std::string> fetch_schema(
+  virtual boost::optional<std::vector<std::string>> fetch_schema(
       const std::string& source_id) override;
-  virtual int create_source(
+  virtual boost::optional<int> create_source(
       const std::string& source_id, int user_id,
       const std::string& schema, const std::string& name) override;
-  virtual int delete_source(const std::string& source_id) override;
+  virtual boost::optional<int> delete_source(
+      const std::string& source_id) override;
+
+  bool ensure_connected();
+  void close();
  private:
   const std::string host_;
   const std::string user_;
@@ -86,16 +71,17 @@ class SourceMetadataSqlStoreTasklet {
       const std::string& host, const std::string& user,
       const std::string& pass, const std::string& db);
 
-  boost::optional<std::string> fetch_schema(const std::string& source_id);
-  int create_source(const std::string& source_id, int user_id,
+  boost::optional<std::vector<std::string>> fetch_schema(const std::string& source_id);
+  boost::optional<int> create_source(const std::string& source_id, int user_id,
                            const std::string& schema, const std::string& name);
-  int delete_source(const std::string& source_id);
+  boost::optional<int> delete_source(const std::string& source_id);
 
-  using fetch_schema_type =
-      std::function<boost::optional<std::string>(const std::string&)>;
-  using create_source_type = std::function<int(
+  using fetch_schema_type = std::function<
+    boost::optional<std::vector<std::string>>(const std::string&)>;
+  using create_source_type = std::function<boost::optional<int>(
       const std::string&, int, const std::string&, const std::string&)>;
-  using delete_source_type = std::function<int(const std::string&)>;
+  using delete_source_type =
+      std::function<boost::optional<int>(const std::string&)>;
  private:
   template<typename T>
   using ts_ptr = boost::thread_specific_ptr<T>;

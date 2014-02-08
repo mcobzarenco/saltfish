@@ -6,12 +6,6 @@
 #include <glog/logging.h>
 #include <boost/optional.hpp>
 
-#include <cppconn/exception.h>
-#include <cppconn/statement.h>
-#include <cppconn/prepared_statement.h>
-#include <mysql_driver.h>
-#include <mysql_connection.h>
-
 #include <algorithm>
 #include <chrono>
 #include <functional>
@@ -180,39 +174,37 @@ void SaltfishServiceImpl::create_source(
   LOG(INFO) << "create_source() inserting source (id="
             << string_to_hex(source_id)
             << ", schema='" << source.schema().ShortDebugString() << "')";
-  try {
-    if (!new_source_id) {
-      auto remote_schema = sql_store_.fetch_schema(source_id);
-      if (remote_schema) {
-        if (*remote_schema == request.source().schema().SerializeAsString()) {
-          // Trying to create a source that already exists with identical schema
-          // Nothing to do - such that the call is idempotent
-          CreateSourceResponse response;
-          response.set_status(CreateSourceResponse::OK);
-          response.set_source_id(source_id);
-          reply.send(response);
-          return;
-        } else {
-          LOG(INFO) << "A source with the same id, but different schema "
-                    << "already exists (source_id="
-                    << string_to_hex(source_id) << ")";
-          reply_with_status(CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
-          return;
-        }
-      }
-    }
-    sql_store_.create_source(source_id, source.user_id(),
-                             source.schema().SerializeAsString(), source.name());
 
-    async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
-    CreateSourceResponse response;
-    response.set_status(CreateSourceResponse::OK);
-    response.set_source_id(source_id);
-    reply.send(response);
-  } catch (const ::sql::SQLException& e) {
-    LOG(ERROR) << "create_source() query error: " << e.what();
-    reply_with_status(CreateSourceResponse::UNKNOWN_ERROR, reply);
+  if (!new_source_id) {
+    auto remote_schema = sql_store_.fetch_schema(source_id);
+    if(!remote_schema) {
+      reply_with_status(CreateSourceResponse::UNKNOWN_ERROR, reply);
+      return;
+    }
+    if (remote_schema->front() == request.source().schema().SerializeAsString()) {
+      // Trying to create a source that already exists with identical schema
+      // Nothing to do - such that the call is idempotent
+      CreateSourceResponse response;
+      response.set_status(CreateSourceResponse::OK);
+      response.set_source_id(source_id);
+      reply.send(response);
+      return;
+    } else {
+      LOG(INFO) << "A source with the same id, but different schema "
+                << "already exists (source_id="
+                << string_to_hex(source_id) << ")";
+      reply_with_status(CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
+      return;
+    }
   }
+  sql_store_.create_source(source_id, source.user_id(),
+                           source.schema().SerializeAsString(), source.name());
+
+  async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
+  CreateSourceResponse response;
+  response.set_status(CreateSourceResponse::OK);
+  response.set_source_id(source_id);
+  reply.send(response);
 }
 
 /***********                      delete_source                     ***********/
@@ -345,74 +337,73 @@ void SaltfishServiceImpl::put_records(
     reply_with_status(PutRecordsResponse::NO_RECORDS_IN_REQUEST, reply);
     return;
   }
-  try {
-    auto schema_str = sql_store_.fetch_schema(source_id);
-    if (!schema_str) {
-      VLOG(0) << "Received put_records request for non-existent source; id="
-              << string_to_hex(source_id);
+  auto schema_vec = sql_store_.fetch_schema(source_id);
+  if (!schema_vec) {
+    reply_with_status(PutRecordsResponse::UNKNOWN_ERROR, reply);
+    return;
+  }
+  if (schema_vec->size() == 0) {
+    VLOG(0) << "Received put_records request for non-existent source; id="
+            << string_to_hex(source_id);
+    stringstream msg;
+    msg << "Trying to put records into non-existent source (id="
+        << string_to_hex(source_id) << ")";
+    reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
+                      msg.str().c_str());
+    return;
+  }
+  source::Schema schema;
+  if (!schema.ParseFromString(schema_vec->front())) {
+    LOG(ERROR) << "Could not parse source schema for request: "
+               << request.DebugString();
+    reply_with_status(PutRecordsResponse::INVALID_SCHEMA, reply,
+                      "The source does not a valid schema");
+    return;
+  }
+  for(uint32_t ix = 0; ix < n_records; ++ix) {
+    if (auto err = check_record(schema, request.records(ix).record())) {
       stringstream msg;
-      msg << "Trying to put records into non-existent source (id="
-          << string_to_hex(source_id) << ")";
-      reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
+      msg << "At position " << ix << ": " << err.what();
+      VLOG(0) << "Invalid record in put_records request: " << msg.str();
+      reply_with_status(PutRecordsResponse::INVALID_RECORD, reply,
                         msg.str().c_str());
       return;
     }
-    source::Schema schema;
-    if (!schema.ParseFromString(*schema_str)) {
-      LOG(ERROR) << "Could not parse source schema for request: "
-                 << request.DebugString();
-      reply_with_status(PutRecordsResponse::INVALID_SCHEMA, reply,
-                        "The source does not a valid schema");
-      return;
-    }
-    for(uint32_t ix = 0; ix < n_records; ++ix) {
-      if (auto err = check_record(schema, request.records(ix).record())) {
-        stringstream msg;
-        msg << "At position " << ix << ": " << err.what();
-        VLOG(0) << "Invalid record in put_records request: " << msg.str();
-        reply_with_status(PutRecordsResponse::INVALID_RECORD, reply,
-                          msg.str().c_str());
-        return;
-      }
-    }
-    auto record_ids = ids_for_put_request(request);
-    CHECK_EQ(request.records_size(), record_ids.size());
-    auto reply_success = [reply, record_ids] () mutable {
-      PutRecordsResponse response;
-      response.set_status(PutRecordsResponse::OK);
-      for (const auto& rid : record_ids) response.add_record_ids(rid);
-      reply.send(response);
-    };
-    stringstream bucket_ss;
-    bucket_ss << sources_data_bucket_prefix_ << string_to_hex(source_id);
-    string bucket{bucket_ss.str()};
-
-    auto replier = make_shared<ReplySync>(request.records_size(), reply_success);
-    vector<function<void()>> fetch_closures;
-    fetch_closures.reserve(request.records_size());
-    for (auto i = 0; i < request.records_size(); ++i) {
-      const auto& record_id = record_ids[i];
-      const auto& record = request.records(i).record();
-      auto handler = bind(&put_records_get_handler, ref(riak_client_), record,
-                          *reinterpret_cast<const int64_t*>(record_id.c_str()),
-                          replier, reply, _1,  _2);
-
-      VLOG(0) << "Queueing put_record @ (b=" << bucket
-              << " k=" << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
-      // riak_client_.fetch(bucket.str(), record_id, handler);
-      fetch_closures.emplace_back([this, bucket, record_id, handler] () {
-          this->riak_client_.fetch(bucket, record_id,
-                                   function<void(riak::object, const error_code)>{handler});
-        });
-    }
-    for_each(fetch_closures.begin(), fetch_closures.end(),
-             [](function<void()>& closure) { closure(); });
-
-    // async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
-  } catch (const ::sql::SQLException& e) {
-    LOG(ERROR) << "create_source() query error: " << e.what();
-    reply_with_status(PutRecordsResponse::UNKNOWN_ERROR, reply);
   }
+  auto record_ids = ids_for_put_request(request);
+  CHECK_EQ(request.records_size(), record_ids.size());
+  auto reply_success = [reply, record_ids] () mutable {
+    PutRecordsResponse response;
+    response.set_status(PutRecordsResponse::OK);
+    for (const auto& rid : record_ids) response.add_record_ids(rid);
+    reply.send(response);
+  };
+  stringstream bucket_ss;
+  bucket_ss << sources_data_bucket_prefix_ << string_to_hex(source_id);
+  string bucket{bucket_ss.str()};
+
+  auto replier = make_shared<ReplySync>(request.records_size(), reply_success);
+  vector<function<void()>> fetch_closures;
+  fetch_closures.reserve(request.records_size());
+  for (auto i = 0; i < request.records_size(); ++i) {
+    const auto& record_id = record_ids[i];
+    const auto& record = request.records(i).record();
+    auto handler = bind(&put_records_get_handler, ref(riak_client_), record,
+                        *reinterpret_cast<const int64_t*>(record_id.c_str()),
+                        replier, reply, _1,  _2);
+
+    VLOG(0) << "Queueing put_record @ (b=" << bucket
+            << " k=" << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
+    // riak_client_.fetch(bucket.str(), record_id, handler);
+    fetch_closures.emplace_back([this, bucket, record_id, handler] () {
+        this->riak_client_.fetch(bucket, record_id,
+                                 function<void(riak::object, const error_code)>{handler});
+      });
+  }
+  for_each(fetch_closures.begin(), fetch_closures.end(),
+           [](function<void()>& closure) { closure(); });
+
+  // async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
 }
 
 }}  // namespace reinferio::saltfish
