@@ -116,6 +116,7 @@ class SaltfishTests(unittest.TestCase):
             pb_port=cls._config.riak.port)
         cls._sqlc = pymysql.connect(
             host=cls._config.maria_db.host,
+            port=cls._config.maria_db.port,
             user=cls._config.maria_db.user,
             passwd=cls._config.maria_db.password,
             db=cls._config.maria_db.db,

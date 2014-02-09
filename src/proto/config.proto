@@ -7,9 +7,10 @@ message Riak {
 
 message MariaDB {
   optional string host = 1      [default = "127.0.0.1"];
-  optional string db = 2        [default = "mlaas"];
-  optional string user = 3      [default = "root"];
-  optional string password = 4  [default = ""];
+  optional uint32 port = 2      [default = 3306];
+  optional string db = 3        [default = "mlaas"];
+  optional string user = 4      [default = "root"];
+  optional string password = 5  [default = ""];
 }
 
 message RabbitMQ {

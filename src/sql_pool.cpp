@@ -7,10 +7,14 @@
 #include <mysql_driver.h>
 #include <mysql_connection.h>
 
-#include <thread>
+#include <functional>
 
 
 namespace reinferio { namespace saltfish { namespace store {
+
+namespace {
+constexpr uint32_t SQL_CONNECT_MAX_RETRIES = 3;
+}
 
 using namespace std;
 using namespace std::placeholders;
@@ -25,37 +29,40 @@ std::unique_ptr<sql::Connection> connect_to_sql(
 }
 
 SourceMetadataSqlStore::SourceMetadataSqlStore(
-    const std::string& host, const std::string& user,
-    const std::string& pass, const std::string& db,
-    bool thread_init_end)
-  : host_{host}, user_{user}, pass_{pass}, db_{db},
-    thread_init_end_{thread_init_end}, connected_{false}, driver_{nullptr} {
+    const std::string& host, const uint16_t port, const std::string& user,
+    const std::string& pass, const std::string& db, const bool thread_init_end)
+    : host_{host}, port_{port}, user_{user}, pass_{pass}, db_{db},
+      thread_init_end_{thread_init_end}, driver_{nullptr} {
 }
 
 bool SourceMetadataSqlStore::ensure_connected() {
-  connected_ = true;
   if (!driver_) {
     driver_ = sql::mysql::get_driver_instance();
     CHECK(driver_) << "Could not retrieve MySQL driver";
     if(thread_init_end_) driver_->threadInit();
   }
-  int n_tries{0};
+  uint32_t n_retry{0};
+  sql::ConnectOptionsMap properties;
+  properties["hostName"] = host_;
+  properties["port"] = port_;
+  properties["userName"] = user_;
+  properties["password"] = pass_;
   while (true) {
-    if (n_tries++ > 2)  return false;
+    if (n_retry++ >= SQL_CONNECT_MAX_RETRIES)  return false;
     try {
-      conn_.reset(driver_->connect(host_, user_, pass_));
+      conn_.reset(driver_->connect(properties));
       conn_->setSchema(db_);
       return true;
     } catch (const sql::SQLException& e) {
-      LOG(WARNING) << e.what();
+      LOG(WARNING) << "[retry " << n_retry << "] " << e.what();
       conn_.reset();
     }
   }
 }
 
 void SourceMetadataSqlStore::close() {
-  if(thread_init_end_) driver_->threadEnd();
-  LOG(INFO) << "closing sql conn..";
+  if(driver_ != nullptr && thread_init_end_) driver_->threadEnd();
+  LOG(INFO) << "Closing SQL connection";
 }
 
 boost::optional<std::vector<std::string>> SourceMetadataSqlStore::fetch_schema(
@@ -122,10 +129,10 @@ boost::optional<int> SourceMetadataSqlStore::delete_source(
 }
 
 SourceMetadataSqlStoreTasklet::SourceMetadataSqlStoreTasklet(
-    zmq::context_t& context, const std::string& host, const std::string& user,
-    const std::string& pass, const std::string& db)
-    : store_{host, user, pass, db, true},
-      tasklet_{context, []() { }, [&]() { store_.close(); }} {
+    zmq::context_t& context, const std::string& host, const uint16_t port,
+    const std::string& user, const std::string& pass, const std::string& db)
+    : store_{new SourceMetadataSqlStore{host, port, user, pass, db, true}},
+      tasklet_{context, []() { }, [&]() { store_.reset(nullptr); }} {
 }
 
 boost::optional<std::vector<std::string>> SourceMetadataSqlStoreTasklet::fetch_schema(
@@ -134,7 +141,7 @@ boost::optional<std::vector<std::string>> SourceMetadataSqlStoreTasklet::fetch_s
   if (!fetch_schema_.get()) {
     fetch_schema_.reset(new lib::Connection<fetch_schema_type>{
         std::move(tasklet_.connect(fetch_schema_type(std::bind(
-            &SourceMetadataSqlStore::fetch_schema, &store_, _1))))});
+            &SourceMetadataSqlStore::fetch_schema, store_.get(), _1))))});
   }
   return fetch_schema_->operator()(source_id);
 }
@@ -146,7 +153,7 @@ boost::optional<int> SourceMetadataSqlStoreTasklet::create_source(
   if (!create_source_.get()) {
     create_source_.reset(new lib::Connection<create_source_type>{
         std::move(tasklet_.connect(create_source_type(std::bind(
-            &SourceMetadataSqlStore::create_source, &store_, _1, _2, _3, _4))))
+            &SourceMetadataSqlStore::create_source, store_.get(), _1, _2, _3, _4))))
             });
   }
   return create_source_->operator()(source_id, user_id, schema, name);
@@ -158,7 +165,7 @@ boost::optional<int> SourceMetadataSqlStoreTasklet::delete_source(
   if (!delete_source_.get()) {
     delete_source_.reset(new lib::Connection<delete_source_type>{
         std::move(tasklet_.connect(delete_source_type(std::bind(
-            &SourceMetadataSqlStore::delete_source, &store_, _1))))});
+            &SourceMetadataSqlStore::delete_source, store_.get(), _1))))});
   }
   return delete_source_->operator()(source_id);
 }

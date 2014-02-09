@@ -38,9 +38,10 @@ class SourceMetadataStore {
 
 class SourceMetadataSqlStore : SourceMetadataStore {
  public:
-  SourceMetadataSqlStore (const std::string& host, const std::string& user,
-                         const std::string& pass, const std::string& db,
-                         bool thread_init_end = true);
+  SourceMetadataSqlStore(
+      const std::string& host, const uint16_t port, const std::string& user,
+      const std::string& pass, const std::string& db,
+      const bool thread_init_end = true);
   ~SourceMetadataSqlStore() { close(); }
 
   virtual boost::optional<std::vector<std::string>> fetch_schema(
@@ -55,25 +56,27 @@ class SourceMetadataSqlStore : SourceMetadataStore {
   void close();
  private:
   const std::string host_;
+  const uint16_t port_;
   const std::string user_;
   const std::string pass_;
   const std::string db_;
+  const bool thread_init_end_;
 
-  bool thread_init_end_;
-  bool connected_;
   sql::Driver* driver_;
   std::unique_ptr<sql::Connection> conn_;
 };
 
 class SourceMetadataSqlStoreTasklet {
  public:
-  SourceMetadataSqlStoreTasklet(zmq::context_t& context,
-      const std::string& host, const std::string& user,
-      const std::string& pass, const std::string& db);
+  SourceMetadataSqlStoreTasklet(
+      zmq::context_t& context, const std::string& host, const uint16_t port,
+      const std::string& user, const std::string& pass, const std::string& db);
 
-  boost::optional<std::vector<std::string>> fetch_schema(const std::string& source_id);
-  boost::optional<int> create_source(const std::string& source_id, int user_id,
-                           const std::string& schema, const std::string& name);
+  boost::optional<std::vector<std::string>> fetch_schema(
+      const std::string& source_id);
+  boost::optional<int> create_source(
+      const std::string& source_id, int user_id,
+      const std::string& schema, const std::string& name);
   boost::optional<int> delete_source(const std::string& source_id);
 
   using fetch_schema_type = std::function<
@@ -86,7 +89,7 @@ class SourceMetadataSqlStoreTasklet {
   template<typename T>
   using ts_ptr = boost::thread_specific_ptr<T>;
 
-  SourceMetadataSqlStore store_;
+  std::unique_ptr<SourceMetadataSqlStore> store_;
   lib::Tasklet tasklet_;
   ts_ptr<lib::Connection<fetch_schema_type>> fetch_schema_;
   ts_ptr<lib::Connection<create_source_type>> create_source_;
