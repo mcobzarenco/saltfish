@@ -56,7 +56,7 @@ ENV LD_LIBRARY_PATH /usr/local/lib/x86_64-linux-gnu
 RUN cd /src && git clone https://github.com/alanxz/SimpleAmqpClient.git
 RUN cd /src/SimpleAmqpClient && mkdir build && cd build && cmake .. && make -j4 && make install
 
-# Installl saltfish
+# Install saltfish
 RUN apt-get install -y libgoogle-glog-dev libboost-thread-dev libboost-program-options-dev
 RUN mkdir -p /src/saltfish
 ADD . /src/saltfish/
