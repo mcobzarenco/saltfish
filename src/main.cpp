@@ -21,7 +21,6 @@ int main(int argc, char **argv) {
   string bind_str;
   string riak_host;
   uint16_t riak_port{0};
-
   auto description = po::options_description{
     "Saltfish server (built on " + build_time +
     ") manages schemas and data for soruces.\n\nAllowed options:"
@@ -42,7 +41,6 @@ int main(int argc, char **argv) {
        "Riak node port (pbc protocol)");
 
   auto variables = po::variables_map{};
-
   try {
     po::store(po::parse_command_line(argc, argv, description), variables);
     po::notify(variables);
@@ -50,20 +48,11 @@ int main(int argc, char **argv) {
       cerr << description << endl;
       return 0;
     }
-
     saltfish::config::Saltfish conf;
-    if (!conf_file.empty()) {
-      conf = saltfish::parse_config_file(conf_file);
-    }
-    if (!bind_str.empty()) {
-      conf.set_bind_str(bind_str);
-    }
-    if (!riak_host.empty()) {
-      conf.mutable_riak()->set_host(riak_host);
-    }
-    if (riak_port != 0)  {
-      conf.mutable_riak()->set_port(riak_port);
-    }
+    if (!conf_file.empty())   conf = saltfish::parse_config_file(conf_file);
+    if (!bind_str.empty())    conf.set_bind_str(bind_str);
+    if (!riak_host.empty())   conf.mutable_riak()->set_host(riak_host);
+    if (riak_port != 0)       conf.mutable_riak()->set_port(riak_port);
 
     saltfish::SaltfishServer server(conf);
     server.run();
@@ -77,6 +66,5 @@ int main(int argc, char **argv) {
     LOG(ERROR) << e.what();
     return -1;
   }
-
   return 0;
 }

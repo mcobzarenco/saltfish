@@ -178,32 +178,39 @@ void SaltfishServiceImpl::create_source(
   if (!new_source_id) {
     auto remote_schema = sql_store_.fetch_schema(source_id);
     if(!remote_schema) {
-      reply_with_status(CreateSourceResponse::UNKNOWN_ERROR, reply);
+      reply_with_status(CreateSourceResponse::NETWORK_ERROR, reply);
       return;
     }
-    if (remote_schema->front() == request.source().schema().SerializeAsString()) {
-      // Trying to create a source that already exists with identical schema
-      // Nothing to do - such that the call is idempotent
-      CreateSourceResponse response;
-      response.set_status(CreateSourceResponse::OK);
-      response.set_source_id(source_id);
-      reply.send(response);
-      return;
-    } else {
-      LOG(INFO) << "A source with the same id, but different schema "
-                << "already exists (source_id="
-                << string_to_hex(source_id) << ")";
-      reply_with_status(CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
-      return;
+    if (remote_schema->size() > 0) {
+      if (remote_schema->front() == request.source().schema().SerializeAsString()) {
+        // Trying to create a source that already exists with identical schema
+        // Nothing to do - send OK such that the call is idempotent
+        CreateSourceResponse response;
+        response.set_status(CreateSourceResponse::OK);
+        response.set_source_id(source_id);
+        reply.send(response);
+        return;
+      } else {
+        LOG(INFO) << "A source with the same id, but different schema "
+                  << "already exists (source_id="
+                  << string_to_hex(source_id) << ")";
+        reply_with_status(CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
+        return;
+      }
     }
   }
-  sql_store_.create_source(source_id, source.user_id(),
-                           source.schema().SerializeAsString(), source.name());
-
-  async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
+  auto resp = sql_store_.create_source(source_id,
+                                       source.user_id(),
+                                       source.schema().SerializeAsString(),
+                                       source.name());
   CreateSourceResponse response;
-  response.set_status(CreateSourceResponse::OK);
-  response.set_source_id(source_id);
+  if (resp) {
+    async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
+    response.set_status(CreateSourceResponse::OK);
+    response.set_source_id(source_id);
+  } else {
+    response.set_status(CreateSourceResponse::NETWORK_ERROR);
+  }
   reply.send(response);
 }
 

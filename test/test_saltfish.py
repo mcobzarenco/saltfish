@@ -30,7 +30,7 @@ SOURCES_DATA_BUCKET_ROOT = '/ml/sources/data/'
 TEST_PASSED = '*** OK ***'
 FAILED_PREFIX = 'TEST FAILED | '
 
-DEFAULT_DEADLINE = 2
+DEFAULT_DEADLINE = 500
 
 log = multiprocessing.log_to_stderr()
 log.setLevel(logging.INFO)
@@ -86,7 +86,7 @@ def make_put_records_req(source_id, records=None, record_ids=None):
 
 
 def uuid2hex(uuid_str):
-    return str(uuid.UUID(bytes=uuid_str))
+    return str(uuid.UUID(bytes=uuid_str)).replace('-', '')
 
 
 def bytes_to_int64(int_str):

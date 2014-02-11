@@ -71,17 +71,23 @@ boost::optional<std::vector<std::string>> SourceMetadataSqlStore::fetch_schema(
       "SELECT source_id, user_id, source_schema, name FROM sources "
       "WHERE source_id = ?";
   if (!ensure_connected())  return boost::optional<std::vector<std::string>>{};
-  std::unique_ptr<sql::PreparedStatement> get_query{
-    conn_->prepareStatement(GET_SOURCE_TEMPLATE)};
-  get_query->setString(1, source_id);
-  std::unique_ptr<sql::ResultSet> res{get_query->executeQuery()};
-  if (res->rowsCount() > 0) {
-    CHECK(res->rowsCount() == 1)
-        << "Integrity constraint violated, source_id is a primary key";
-    VLOG(0) << "source_id already exists";
-    res->next();
-    return boost::optional<std::vector<std::string>>{
-      std::vector<string>{{res->getString("source_schema")}}};
+  try {
+    std::unique_ptr<sql::PreparedStatement> get_query{
+      conn_->prepareStatement(GET_SOURCE_TEMPLATE)};
+    get_query->setString(1, source_id);
+    std::unique_ptr<sql::ResultSet> res{get_query->executeQuery()};
+    if (res->rowsCount() > 0) {
+      CHECK(res->rowsCount() == 1)
+          << "Integrity constraint violated, source_id is a primary key";
+      VLOG(0) << "source_id already exists";
+      res->next();
+      return boost::optional<std::vector<std::string>>{
+        std::vector<string>{{res->getString("source_schema")}}};
+    }
+    return boost::optional<std::vector<std::string>>{std::vector<std::string>{}};
+  } catch (const sql::SQLException& e) {
+    LOG(WARNING) << "SourceMetadataSqlStore::fetch_schema() - sql exception - "
+                 << e.what();
   }
   return boost::optional<std::vector<std::string>>{};
 }
