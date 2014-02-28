@@ -45,8 +45,11 @@ RUN cd /src &&  git clone https://github.com/reinferio/riakpp.git
 RUN cd /src/riakpp && mkdir build && cd build && cmake .. && make -j4 && make install
 
 # Install rpcz
+RUN apt-get install -y python-dev python-pip
+RUN pip install protobuf
 RUN cd /src && git clone https://github.com/reinferio/rpcz.git
 RUN cd /src/rpcz && mkdir build && cd build && cmake .. && make && make install
+RUN cd /src/rpcz/python && python setup.py build && python setup.py install
 
 # Install SimpleAmqpClient
 RUN apt-get install -y libssl-dev libboost-chrono-dev
@@ -65,6 +68,8 @@ RUN cd /src/saltfish/build &&  cmake .. && make -j4 && make install
 RUN /src/saltfish/build/test/test_service_utils
 RUN /src/saltfish/build/test/test_tasklet
 
+#RUN cd /src/saltfish /src/saltfish/build/test/test_tasklet
 
-ENTRYPOINT saltfish
-CMD saltfish -h
+
+# ENTRYPOINT saltfish
+# CMD saltfish -h

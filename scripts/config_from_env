@@ -1,0 +1,95 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+from __future__ import print_function, division
+import argparse
+import sys
+import re
+import os
+from os.path import join
+
+from google import protobuf
+from google.protobuf import text_format
+from rpcz import compiler
+
+RIAK_PREFIX = "RIAK"
+MARIADB_PREFIX = "MARIADB"
+
+CONFIG_PROTO = join('..', 'src', 'proto', 'config.proto')
+CONFIG_DEFAULT_FILE = join('..', 'etc', 'saltfish.conf')
+
+stdout = sys.stdout
+sys.stdout = open(os.devnull, 'w')
+
+compiler.generate_proto(CONFIG_PROTO, '.')
+import config_pb2
+
+
+def extract_host_port(port_str):
+   """Extract (host, port) pair from strings like 'tcp://<host>:<port>'"""
+   ENV_PORT_REGEX = r'tcp://(.*):([0-9]+)'
+   match = re.search(ENV_PORT_REGEX, port_str)
+   if not match: return None
+   return (match.group(1), int(match.group(2)))
+
+
+def extract_host_port_from_env(env, var_name):
+   if var_name not in env:
+      print("ERROR No environment variable %s" % var_name, file=sys.stderr)
+      sys.exit(1)
+   pair = extract_host_port(env[var_name])
+   if pair is None:
+      print("ERROR Could not parse host, port pair from %s='%s'" %
+            (var_name, env[var_name]), file=sys.stderr)
+      sys.exit(1)
+   return pair
+
+
+def add_mariadb_config(env, config):
+   var_hostport = MARIADB_PREFIX + "_PORT"
+   host, port = extract_host_port_from_env(env, var_hostport)
+   config.maria_db.host = host
+   config.maria_db.port = port
+
+   var_user = MARIADB_PREFIX + "_ENV_USER"
+   if not var_user in env:
+      print("WARNING No environment variable %s" % var_user, file=sys.stderr)
+   else:
+      config.maria_db.user = env[var_user]
+
+   var_password = MARIADB_PREFIX + "_ENV_PASS"
+   if not var_password in env:
+      print("WARNING No environment variable %s" % var_password, file=sys.stderr)
+   else:
+      config.maria_db.password = env[var_password]
+
+
+def add_riak_config(env, config):
+   var_name = RIAK_PREFIX + "_PORT"
+   host, port = extract_host_port(env[var_name])
+   config.riak.host = host
+   config.riak.port = port
+
+
+def add_rabbitmq_config(env, config):
+   config.rabbit_mq.host = "172.17.42.1"
+
+
+if __name__ == '__main__':
+   parser = argparse.ArgumentParser(
+      description="Generate config file from environment variables")
+   parser.add_argument('--base', type=str, default=None, action='store',
+                       help="Base Saltfish config file", metavar='FILE')
+   options = parser.parse_args()
+   conf_file = options.base or CONFIG_DEFAULT_FILE
+
+   config = config_pb2.Saltfish()
+   with open(conf_file, 'r') as conf_file:
+      config = config_pb2.Saltfish()
+      text_format.Merge(conf_file.read(), config)
+
+   env = os.environ
+   add_mariadb_config(env, config)
+   add_riak_config(env, config)
+   add_rabbitmq_config(env, config)
+
+   print(text_format.MessageToString(config, as_utf8=True), file=stdout)
