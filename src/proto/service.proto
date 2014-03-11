@@ -65,6 +65,25 @@ message GenerateIdResponse {
   repeated bytes ids = 3;
 }
 
+/*****************      SourceManagerService::list_sources     *****************/
+
+message ListSourcesRequest {
+  optional int32 user_id = 1;
+}
+
+message ListSourcesResponse {
+  enum Status {
+    UNKNOWN_ERROR = 0;
+    OK = 1;
+    INVALID_USER_ID = 2;
+    NETWORK_ERROR = 3;
+  }
+  optional Status status = 1;
+  optional string msg = 2;
+
+  repeated reinferio.source.Source sources = 3;
+}
+
 /*****************      SourceManagerService::put_records     *****************/
 
 message PutRecordsRequest {
@@ -107,6 +126,7 @@ service SourceManagerService  {
   rpc create_source(CreateSourceRequest) returns (CreateSourceResponse);
   rpc delete_source(DeleteSourceRequest) returns (DeleteSourceResponse);
   rpc generate_id(GenerateIdRequest) returns (GenerateIdResponse);
+  rpc list_sources(ListSourcesRequest) returns (ListSourcesResponse);
   rpc put_records(PutRecordsRequest) returns (PutRecordsResponse);
 }
 
