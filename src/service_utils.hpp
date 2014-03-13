@@ -57,7 +57,7 @@ inline std::string string_to_hex(const std::string& source_id) {
   return out.str();
 }
 
-inline bool schema_has_duplicates(const source::Schema& schema){
+inline bool schema_has_duplicates(const core::Schema& schema){
     using Compare = bool(*)(const std::string*, const std::string*);
     std::set<const std::string*, Compare> unique_names{
         [](const std::string* a, const std::string* b) { return *a < *b; } };
@@ -83,17 +83,17 @@ class MaybeError {
 };
 
 inline MaybeError check_record(
-    const source::Schema& schema, const source::Record& record) {
+    const core::Schema& schema, const core::Record& record) {
   int exp_reals{0}, exp_cats{0};
   for (auto feature : schema.features()) {
-    if (feature.feature_type() == source::Feature::INVALID) {
+    if (feature.feature_type() == core::Feature::INVALID) {
       std::ostringstream msg;
       msg << "Source unusable as its schema contains a feature marked as invalid"
           << " (feature_name=" << feature.name() << ")";
       return MaybeError{msg.str()};
-    } else if (feature.feature_type() == source::Feature::REAL) {
+    } else if (feature.feature_type() == core::Feature::REAL) {
       exp_reals++;
-    } else if (feature.feature_type() == source::Feature::CATEGORICAL) {
+    } else if (feature.feature_type() == core::Feature::CATEGORICAL) {
       exp_cats++;
     } else {
       return MaybeError{

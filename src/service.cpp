@@ -303,7 +303,7 @@ void put_records_put_handler(shared_ptr<ReplySync> replier,
 }
 
 void put_records_get_handler(
-    riak::client& riak_client, const source::Record record,
+    riak::client& riak_client, const core::Record record,
     const int64_t index_value, shared_ptr<ReplySync> replier,
     rpcz::reply<PutRecordsResponse> reply,
     riak::object object, const error_code error) {
@@ -359,7 +359,7 @@ void SaltfishServiceImpl::put_records(
                       msg.str().c_str());
     return;
   }
-  source::Schema schema;
+  core::Schema schema;
   if (!schema.ParseFromString(schema_vec->front())) {
     LOG(ERROR) << "Could not parse source schema for request: "
                << request.DebugString();
