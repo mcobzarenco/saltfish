@@ -1,29 +1,32 @@
 #include "publishers.hpp"
 
 #include <glog/logging.h>
+#include <hiredis/hiredis.h>
+
+#include <memory>
 
 
 using namespace std;
-using namespace AmqpClient;
 
 namespace reinferio {
 namespace saltfish {
 
-RabbitPublisher::RabbitPublisher(
-    const string& host_, const uint16_t port_,
-    const string& username_, const string& password_,
-    const string& exchange_)
-    : host(host_), port(port_), username(username_),
-      password(password_), exchange(exchange_)  {
-  channel_ = Channel::Create(host_, port_, username_, password_);
-  channel_->DeclareExchange(exchange_, Channel::EXCHANGE_TYPE_FANOUT);
+RedisPublisher::RedisPublisher(
+    const string& host_, const uint16_t port_, const string& key_)
+    : host(host_), port(port_), key(key_) {
+  timeval timeout{1, 500000};
+  context_ = redisConnectWithTimeout(host.c_str(), port, timeout);
 }
 
-void RabbitPublisher::publish(RequestType type, const string& msg) {
-  LOG(INFO) << "publishing msg on RMQ";
-  BasicMessage::ptr_t msg_in = BasicMessage::Create();
-  msg_in->Body(msg);
-  channel_->BasicPublish(exchange, "", msg_in);
+void RedisPublisher::publish(RequestType type, const string& msg) {
+  LOG(INFO) << "Publishing msg on Redis";
+  auto del = [](redisReply* r) {
+    LOG(INFO) << "freeing redis reply";
+    freeReplyObject(r);
+  };
+  unique_ptr<redisReply, decltype(del)> reply{static_cast<redisReply *>(
+  redisCommand(context_, "PUBLISH %s %s", key.c_str(), msg.c_str())), del};
+  LOG(INFO) << "Redis reply: " << reply->str;
 }
 
 

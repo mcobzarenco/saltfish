@@ -13,11 +13,10 @@ message MariaDB {
   optional string password = 5  [default = ""];
 }
 
-message RabbitMQ {
+message Redis {
   optional string host = 1      [default = "127.0.0.1"];
-  optional uint32 port = 2      [default = 5672];
-  optional string user = 3      [default = "guest"];
-  optional string password = 4  [default = "guest"];
+  optional uint32 port = 2      [default = 6379];
+  optional string key = 3       [default = "saltfish:pub"];
 }
 
 message Saltfish {
@@ -28,5 +27,5 @@ message Saltfish {
 
   optional Riak riak = 4;
   optional MariaDB maria_db = 5;
-  optional RabbitMQ rabbit_mq = 6;
+  optional Redis redis = 6;
 }

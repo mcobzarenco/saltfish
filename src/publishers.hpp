@@ -3,38 +3,31 @@
 
 #include "service.pb.h"
 
-#include <SimpleAmqpClient/SimpleAmqpClient.h>
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-
 #include <string>
 #include <cstdint>
 
 
+class redisContext;
+
 namespace reinferio {
 namespace saltfish {
 
-class RabbitPublisher {
+class RedisPublisher {
  public:
-  RabbitPublisher(const std::string& host_ = "127.0.0.1",
-                  const uint16_t port_ = 5672,
-                  const std::string& username_ = "guest",
-                  const std::string& password_ = "guest",
-                  const std::string& exchange_ = "saltfish");
+  RedisPublisher(const std::string& host_ = "127.0.0.1",
+                 const uint16_t port_ = 6379,
+                 const std::string& key_ = "saltfish:pub");
 
-  RabbitPublisher(const RabbitPublisher&) = delete;
-  RabbitPublisher& operator=(const RabbitPublisher&) = delete;
+  RedisPublisher(const RedisPublisher&) = delete;
+  RedisPublisher& operator=(const RedisPublisher&) = delete;
 
   void publish(RequestType type, const std::string& msg);
 
   const std::string host;
   const uint16_t port;
-  const std::string username;
-  const std::string password;
-
-  const std::string exchange;
+  const std::string key;
  private:
-  AmqpClient::Channel::ptr_t channel_;
+  redisContext* context_;
 };
 
 }}  // namespace reinferio::saltfish

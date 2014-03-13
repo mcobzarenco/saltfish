@@ -49,7 +49,7 @@ class SaltfishServer {
   rpcz::server server_;
   riak::client riak_client_;
   store::SourceMetadataSqlStoreTasklet sql_store_;
-  RabbitPublisher rabbit_pub_;
+  RedisPublisher redis_pub_;
 };
 
 }}  // namespace saltfish::reinferio
