@@ -1,5 +1,5 @@
 #include "service_utils.hpp"
-#include "source.pb.h"
+#include "core.pb.h"
 #include "service.pb.h"
 
 #include "gmock/gmock.h"
@@ -47,33 +47,33 @@ TEST(GenerateRandomString, GeneratesUniqueStrings) {
 }
 
 TEST(SchemaHasDuplicatesTest, EmptyNoDupsAndDups) {
-  source::Schema schema;
+  core::Schema schema;
   EXPECT_FALSE(saltfish::schema_has_duplicates(schema))
       << "empty schema - does not have duplicates";
 
-  source::Feature* feat{nullptr};
+  core::Feature* feat{nullptr};
   feat = schema.add_features();
   feat->set_name("feature_1");
-  feat->set_feature_type(source::Feature::REAL);
+  feat->set_feature_type(core::Feature::REAL);
   EXPECT_FALSE(saltfish::schema_has_duplicates(schema))
           << "there are no duplicates";
 
   feat = schema.add_features();
   feat->set_name("feature_2");
-  feat->set_feature_type(source::Feature::REAL);
+  feat->set_feature_type(core::Feature::REAL);
   EXPECT_FALSE(saltfish::schema_has_duplicates(schema))
           << "there are no duplicates";
 
   feat = schema.add_features();
   feat->set_name("feature_3");
-  feat->set_feature_type(source::Feature::CATEGORICAL);
+  feat->set_feature_type(core::Feature::CATEGORICAL);
   EXPECT_FALSE(saltfish::schema_has_duplicates(schema))
       << "there are no duplicates";
 
   // Adding a duplicate feature now
   feat = schema.add_features();
   feat->set_name("feature_1");
-  feat->set_feature_type(source::Feature::CATEGORICAL);
+  feat->set_feature_type(core::Feature::CATEGORICAL);
   EXPECT_TRUE(saltfish::schema_has_duplicates(schema))
       << "feature_1 is duplicated";
 }
@@ -81,26 +81,26 @@ TEST(SchemaHasDuplicatesTest, EmptyNoDupsAndDups) {
 class CheckRecordTest : public ::testing::Test {
  protected:
   virtual void SetUp() {
-    source::Feature* feat{nullptr};
+    core::Feature* feat{nullptr};
     feat = schema_.add_features();
     feat->set_name("real_1");
-    feat->set_feature_type(source::Feature::REAL);
+    feat->set_feature_type(core::Feature::REAL);
 
     feat = schema_.add_features();
     feat->set_name("real_2");
-    feat->set_feature_type(source::Feature::REAL);
+    feat->set_feature_type(core::Feature::REAL);
 
     feat = schema_.add_features();
     feat->set_name("categorical_3");
-    feat->set_feature_type(source::Feature::CATEGORICAL);
+    feat->set_feature_type(core::Feature::CATEGORICAL);
   }
 
-  source::Schema schema_;
+  core::Schema schema_;
 };
 
 TEST_F(CheckRecordTest, Valid) {
   saltfish::PutRecordsRequest req;
-  source::Record *record{nullptr};
+  core::Record *record{nullptr};
   record = req.add_records()->mutable_record();
   record->add_reals(0.1234);
   record->add_reals(-852.32);
@@ -121,7 +121,7 @@ TEST_F(CheckRecordTest, Valid) {
 }
 
 TEST_F(CheckRecordTest, MissingFeature) {
-  source::Record record;
+  core::Record record;
   record.add_reals(0.434);
   record.add_cats("red");
   auto status = saltfish::check_record(schema_, record);
@@ -130,7 +130,7 @@ TEST_F(CheckRecordTest, MissingFeature) {
 }
 
 TEST_F(CheckRecordTest, TooManyFeatures) {
-  source::Record record;
+  core::Record record;
   record.add_reals(0.434);
   record.add_reals(-1052.32);
   record.add_cats("red");
@@ -141,7 +141,7 @@ TEST_F(CheckRecordTest, TooManyFeatures) {
 }
 
 TEST_F(CheckRecordTest, IncorrectFeatureType) {
-  source::Record record;
+  core::Record record;
   record.add_reals(0.434);
   record.add_cats("red");
   record.add_cats("yellow");
@@ -151,12 +151,12 @@ TEST_F(CheckRecordTest, IncorrectFeatureType) {
 }
 
 TEST_F(CheckRecordTest, InvalidFeatureInSchema) {
-  source::Schema invalid_schema = schema_;
-  source::Feature* feat = invalid_schema.add_features();
+  core::Schema invalid_schema = schema_;
+  core::Feature* feat = invalid_schema.add_features();
   feat->set_name("problematic_feature");
-  feat->set_feature_type(source::Feature::INVALID);
+  feat->set_feature_type(core::Feature::INVALID);
 
-  source::Record record;
+  core::Record record;
   auto status = saltfish::check_record(invalid_schema, record);
   EXPECT_TRUE(static_cast<bool>(status));
   EXPECT_THAT(status.what(), testing::HasSubstr("invalid"));
