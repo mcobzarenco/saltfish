@@ -1,26 +1,29 @@
-# set(Boost_USE_STATIC_LIBS ON)
-# find_package(Boost COMPONENTS system thread)
-
-# include_directories(${PROTOBUF_INCLUDE_DIRS})
-# include_directories(${Boost_INCLUDE_DIRS})
 include(rpcz_functions)
 find_package(ProtobufPlugin REQUIRED)
 
-protobuf_generate_cpp(CONFIG_PB_SRCS CONFIG_PB_HDRS proto/config.proto)
+set(PROTOBUF_PREFIX "/usr/share/proto/reinferio")
+
+protobuf_generate_cpp(
+  CONFIG_PB_SRCS CONFIG_PB_HDRS proto/config.proto)
 set(CONFIG_PB ${CONFIG_PB_SRCS} ${CONFIG_PB_HDRS})
 
-protobuf_generate_cpp(SOURCE_PB_SRCS SOURCE_PB_HDRS proto/source.proto)
+protobuf_generate_cpp(
+  SOURCE_PB_SRCS SOURCE_PB_HDRS ${PROTOBUF_PREFIX}/core.proto)
 set(SOURCE_PB ${SOURCE_PB_SRCS} ${SOURCE_PB_HDRS})
 
-protobuf_generate_cpp(SERVICE_PB_SRCS SERVICE_PB_HDRS proto/service.proto)
-protobuf_generate_rpcz(SERVICE_RPCZ_SRCS SERVICE_RPCZ_HDRS proto/service.proto)
-set(SERVICE_PB ${SERVICE_PB_SRCS} ${SERVICE_PB_HDRS} ${SERVICE_RPCZ_SRCS} ${SERVICE_RPCZ_HDRS})
+protobuf_generate_cpp_f(
+  SERVICE_PB_SRCS SERVICE_PB_HDRS "-I${PROTOBUF_PREFIX}" ${PROTOBUF_PREFIX}/saltfish.proto)
+protobuf_generate_rpcz_f(
+  SERVICE_RPCZ_SRCS SERVICE_RPCZ_HDRS "-I${PROTOBUF_PREFIX}" ${PROTOBUF_PREFIX}/saltfish.proto)
+set(SERVICE_PB ${SERVICE_PB_SRCS} ${SERVICE_PB_HDRS}
+  ${SERVICE_RPCZ_SRCS} ${SERVICE_RPCZ_HDRS})
 
-protobuf_generate_python(SOURCE_PB_PY proto/source.proto)
-protobuf_generate_python(SERVICE_PB_PY proto/service.proto)
-protobuf_generate_python_rpcz(SERVICE_RPCZ_PY proto/service.proto)
+protobuf_generate_python(SOURCE_PB_PY ${PROTOBUF_PREFIX}/core.proto)
+protobuf_generate_python(SERVICE_PB_PY ${PROTOBUF_PREFIX}/saltfish.proto)
+protobuf_generate_python_rpcz(SERVICE_RPCZ_PY ${PROTOBUF_PREFIX}/saltfish.proto)
 # add_dependencies(${PROJECT_NAME} SOURCE_PB_PY SERVICE_PB_PY SERVICE_RPCZ_PY)
 
+message(${PROTOBUF_INCLUDE_DIR})
 
 add_library(source_pb_lib ${SOURCE_PB})
 add_library(service_pb_lib ${SERVICE_PB})
@@ -60,19 +63,18 @@ add_library(
   saltfish_server
     server.hpp
     server.cpp
+    service.hpp
     publishers.hpp
     publishers.cpp
-    service.hpp
     ${CONFIG_PB}
 )
 target_link_libraries(
   saltfish_server
     sql_pool
     saltfish_service
-    rabbitmq
     riakpp
     rpcz
-    SimpleAmqpClient
+    hiredis
     ${Boost_LIBRARIES}
     ${GLOG_LIBRARY}
     ${PROTOBUF_LIBRARY}
@@ -104,20 +106,6 @@ target_link_libraries(
     ${Boost_LIBRARIES}
     ${PROTOBUF_LIBRARY}
 )
-
-# add_executable(
-#   main2
-#     main2.cpp
-#     ${CONFIG_PB}
-# )
-
-# target_link_libraries(
-#   main2
-#     riak-cpp
-#     pthread
-#     ${PROTOBUF_LIBRARY}
-#     ${Boost_LIBRARIES}
-# )
 
 
 # Install targets
