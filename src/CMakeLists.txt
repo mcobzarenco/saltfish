@@ -1,6 +1,9 @@
 include(rpcz_functions)
 find_package(ProtobufPlugin REQUIRED)
 
+execute_process(COMMAND touch main.cpp
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
 protobuf_generate_cpp(
   CONFIG_PB_SRCS CONFIG_PB_HDRS proto/config.proto)
 set(CONFIG_PB ${CONFIG_PB_SRCS} ${CONFIG_PB_HDRS})
