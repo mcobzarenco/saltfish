@@ -1,7 +1,7 @@
 #ifndef REINFERIO_SALTFISH_PUBLISHERS_HPP
 #define REINFERIO_SALTFISH_PUBLISHERS_HPP
 
-#include "service.pb.h"
+#include "saltfish.pb.h"
 
 #include <string>
 #include <cstdint>

@@ -2,8 +2,8 @@
 #define REINFERIO_SALTFISH_SERVICE_HPP
 
 #include "sql_pool.hpp"
-#include "service.pb.h"
-#include "service.rpcz.h"
+#include "saltfish.pb.h"
+#include "saltfish.rpcz.h"
 
 #include <rpcz/rpcz.hpp>
 #include <riakpp/client.hpp>

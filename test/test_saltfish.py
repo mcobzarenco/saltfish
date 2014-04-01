@@ -19,6 +19,14 @@ import pymysql
 import riak
 import uuid
 
+from reinferio import core_pb2
+from reinferio import saltfish_pb2
+from reinferio.saltfish_pb2 import \
+    CreateSourceRequest, CreateSourceResponse, \
+    DeleteSourceRequest, DeleteSourceResponse, \
+    GenerateIdRequest,   GenerateIdResponse, \
+    PutRecordsRequest,   PutRecordsResponse
+
 
 PROTO_ROOT = join('..', 'src', 'proto')
 DEFAULT_CONNECT = 'tcp://localhost:5555'
@@ -35,21 +43,9 @@ DEFAULT_DEADLINE = 500
 log = multiprocessing.log_to_stderr()
 log.setLevel(logging.INFO)
 
-compiler.generate_proto(join(PROTO_ROOT, 'config.proto'), '.')
-compiler.generate_proto(join(PROTO_ROOT, 'source.proto'), '.')
-compiler.generate_proto(join(PROTO_ROOT, 'service.proto'), '.')
-compiler.generate_proto(join(PROTO_ROOT, 'service.proto'), '.',
-                        with_plugin='python_rpcz', suffix='_rpcz.py')
-import config_pb2
-import source_pb2
-import service_pb2
-from service_pb2 import \
-    CreateSourceRequest, CreateSourceResponse, \
-    DeleteSourceRequest, DeleteSourceResponse, \
-    GenerateIdRequest,   GenerateIdResponse, \
-    PutRecordsRequest,   PutRecordsResponse
 
-import service_rpcz
+compiler.generate_proto(join(PROTO_ROOT, 'config.proto'), '.')
+import config_pb2
 
 
 def make_create_source_req(source_id=None, name=None, features=None):
@@ -109,7 +105,7 @@ class SaltfishTests(unittest.TestCase):
     def setUpClass(cls):
         cls._app = rpcz.Application()
         cls._channel = cls._app.create_rpc_channel(cls._config.bind_str)
-        cls._service = service_rpcz.SourceManagerService_Stub(cls._channel)
+        cls._service = saltfish_pb2.SourceManagerService_Stub(cls._channel)
         cls._riakc = riak.RiakClient(
             protocol='pbc',
             host=cls._config.riak.host,
@@ -140,10 +136,10 @@ class SaltfishTests(unittest.TestCase):
 
     def setUp(self):
         self._features = [
-            {'name': 'timestamp_ms', 'type': source_pb2.Feature.REAL},
-            {'name': 'return', 'type': source_pb2.Feature.REAL},
-            {'name': 'logvol', 'type': source_pb2.Feature.REAL},
-            {'name': 'sector', 'type': source_pb2.Feature.CATEGORICAL}
+            {'name': 'timestamp_ms', 'type': core_pb2.Feature.REAL},
+            {'name': 'return', 'type': core_pb2.Feature.REAL},
+            {'name': 'logvol', 'type': core_pb2.Feature.REAL},
+            {'name': 'sector', 'type': core_pb2.Feature.CATEGORICAL}
         ]
         self._records = [
             [103.31, 0.01, 97041., 'pharma'],
@@ -162,7 +158,7 @@ class SaltfishTests(unittest.TestCase):
         self.assertEqual(1, len(remote))
         remote = remote[0]
 
-        remote_schema = source_pb2.Schema()
+        remote_schema = core_pb2.Schema()
         remote_schema.ParseFromString(remote['source_schema'])
         if request.source.source_id != '':
             self.assertEqual(request.source.source_id, remote['source_id'])
@@ -190,7 +186,7 @@ class SaltfishTests(unittest.TestCase):
         log.info('Trying same id, but different schema. ' \
                  'Error expected (source_id=%s)' % uuid2hex(source_id))
         features = deepcopy(self._features)
-        features[1]['type'] = source_pb2.Feature.CATEGORICAL
+        features[1]['type'] = core_pb2.Feature.CATEGORICAL
         request3 = make_create_source_req(source_id, request.source.name, features)
         response3 = self._service.create_source(request3,
                                                 deadline_ms=DEFAULT_DEADLINE)
@@ -319,7 +315,7 @@ class SaltfishTests(unittest.TestCase):
                      (bucket, bytes_to_int64(record_id)))
             remote = self._riakc.bucket(bucket).get(BinaryString(record_id))
             self.assertIsNotNone(remote.encoded_data)
-            record = source_pb2.Record()
+            record = core_pb2.Record()
             record.ParseFromString(remote.encoded_data)
             self.assertEqual(put_req.records[i].record, record)
 

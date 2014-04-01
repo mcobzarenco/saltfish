@@ -5,7 +5,7 @@
 #include "service.hpp"
 #include "publishers.hpp"
 
-#include "service.pb.h"
+#include "saltfish.pb.h"
 
 
 namespace reinferio {
@@ -51,7 +51,6 @@ void SaltfishServer::run() noexcept {
     auto listener = bind(&RedisPublisher::publish, &redis_pub_, _1, _2);
     saltfish_serv.register_listener(RequestType::ALL, listener);
 
-    // LOG(INFO) << "Exchange: " << rabbit_pub_.exchange;
     server_.register_service(&saltfish_serv);
     server_.bind(config_.bind_str());
     LOG(INFO) << "Serving requests at " << config_.bind_str() << " (riak at "

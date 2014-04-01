@@ -1,6 +1,6 @@
 #include "service_utils.hpp"
 #include "core.pb.h"
-#include "service.pb.h"
+#include "saltfish.pb.h"
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
