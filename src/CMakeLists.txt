@@ -1,31 +1,22 @@
 include(rpcz_functions)
 find_package(ProtobufPlugin REQUIRED)
 
-set(PROTOBUF_PREFIX "/usr/share/proto/reinferio")
-
 protobuf_generate_cpp(
   CONFIG_PB_SRCS CONFIG_PB_HDRS proto/config.proto)
 set(CONFIG_PB ${CONFIG_PB_SRCS} ${CONFIG_PB_HDRS})
 
 protobuf_generate_cpp(
-  SOURCE_PB_SRCS SOURCE_PB_HDRS ${PROTOBUF_PREFIX}/core.proto)
-set(SOURCE_PB ${SOURCE_PB_SRCS} ${SOURCE_PB_HDRS})
+  CORE_PB_SRCS CORE_PB_HDRS ${COREPROTO_PATH})
+set(CORE_PB ${CORE_PB_SRCS} ${CORE_PB_HDRS})
 
-protobuf_generate_cpp_f(
-  SERVICE_PB_SRCS SERVICE_PB_HDRS "-I${PROTOBUF_PREFIX}" ${PROTOBUF_PREFIX}/saltfish.proto)
-protobuf_generate_rpcz_f(
-  SERVICE_RPCZ_SRCS SERVICE_RPCZ_HDRS "-I${PROTOBUF_PREFIX}" ${PROTOBUF_PREFIX}/saltfish.proto)
+protobuf_generate_cpp(
+  SERVICE_PB_SRCS SERVICE_PB_HDRS ${SALTFISHPROTO_PATH})
+protobuf_generate_rpcz(
+  SERVICE_RPCZ_SRCS SERVICE_RPCZ_HDRS ${SALTFISHPROTO_PATH})
 set(SERVICE_PB ${SERVICE_PB_SRCS} ${SERVICE_PB_HDRS}
   ${SERVICE_RPCZ_SRCS} ${SERVICE_RPCZ_HDRS})
 
-protobuf_generate_python(SOURCE_PB_PY ${PROTOBUF_PREFIX}/core.proto)
-protobuf_generate_python(SERVICE_PB_PY ${PROTOBUF_PREFIX}/saltfish.proto)
-protobuf_generate_python_rpcz(SERVICE_RPCZ_PY ${PROTOBUF_PREFIX}/saltfish.proto)
-# add_dependencies(${PROJECT_NAME} SOURCE_PB_PY SERVICE_PB_PY SERVICE_RPCZ_PY)
-
-message(${PROTOBUF_INCLUDE_DIR})
-
-add_library(source_pb_lib ${SOURCE_PB})
+add_library(source_pb_lib ${CORE_PB})
 add_library(service_pb_lib ${SERVICE_PB})
 target_link_libraries(service_pb_lib source_pb_lib)
 
@@ -79,7 +70,6 @@ target_link_libraries(
     ${GLOG_LIBRARY}
     ${PROTOBUF_LIBRARY}
 )
-
 
 add_executable(
   saltfish

@@ -18,6 +18,9 @@ find_package(
 find_package(ProtobufPlugin REQUIRED)
 find_package(Glog REQUIRED)
 
+find_package(CoreProto  REQUIRED)
+find_package(SaltfishProto  REQUIRED)
+
 include_directories(
   ${Boost_INCLUDE_DIR}
   ${GLOG_INCLUDE_DIR}
