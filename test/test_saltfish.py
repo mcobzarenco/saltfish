@@ -50,7 +50,7 @@ import config_pb2
 
 def make_create_source_req(source_id=None, name=None, features=None):
     features = features or []
-    request = service_pb2.CreateSourceRequest()
+    request = CreateSourceRequest()
     if source_id:
         request.source.source_id = source_id
     if name:
@@ -70,7 +70,7 @@ def make_put_records_req(source_id, records=None, record_ids=None):
     records = records or []
     record_ids = record_ids or [None] * len(records)
     assert len(records) == len(record_ids)
-    request = service_pb2.PutRecordsRequest()
+    request = PutRecordsRequest()
     request.source_id = str(source_id)
     for i in xrange(len(records)):
         tagged = request.records.add()
@@ -195,7 +195,7 @@ class SaltfishTests(unittest.TestCase):
         log.info('Got error message: "%s"' % response3.msg)
 
     def try_delete_source(self, source_id):
-        request = service_pb2.DeleteSourceRequest()
+        request = DeleteSourceRequest()
         request.source_id = source_id
         response = self._service.delete_source(request,
                                                deadline_ms=DEFAULT_DEADLINE)
@@ -230,7 +230,7 @@ class SaltfishTests(unittest.TestCase):
 
     def test_delete_source(self):
         create_request = make_create_source_req(features=self._features)
-        delete_request = service_pb2.DeleteSourceRequest()
+        delete_request = DeleteSourceRequest()
         log.info('Creating a source in order to delete it..')
         create_response = self._service.create_source(
             create_request, deadline_ms=DEFAULT_DEADLINE)
@@ -269,11 +269,11 @@ class SaltfishTests(unittest.TestCase):
     def test_generate_id(self):
         ID_COUNT = 10
         log.info('Generating %d ids in one call to the service..' % ID_COUNT)
-        request = service_pb2.GenerateIdRequest()
+        request = GenerateIdRequest()
         request.count = ID_COUNT
         response = self._service.generate_id(request,
                                              deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(service_pb2.GenerateIdResponse.OK, response.status)
+        self.assertEqual(GenerateIdResponse.OK, response.status)
         self.assertEqual(ID_COUNT, len(response.ids))
 
     def test_generate_id_error(self):
@@ -331,7 +331,7 @@ class SaltfishTests(unittest.TestCase):
 
     @unittest.skip("")
     def test_rabbitmq_publisher(self):
-        request = service_pb2.CreateSourceRequest()
+        request = CreateSourceRequest()
         for f in self._features:
             new_feat = request.source.schema.features.add()
             new_feat.name = f['name']
