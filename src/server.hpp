@@ -1,7 +1,7 @@
 #ifndef REINFERIO_SALTFISH_SERVER_HPP
 #define REINFERIO_SALTFISH_SERVER_HPP
 
-#include "sql_pool.hpp"
+#include "sql.hpp"
 #include "publishers.hpp"
 #include "config.pb.h"
 
@@ -48,7 +48,7 @@ class SaltfishServer {
   rpcz::application application_;
   rpcz::server server_;
   riak::client riak_client_;
-  store::SourceMetadataSqlStoreTasklet sql_store_;
+  store::MetadataSqlStoreTasklet sql_store_;
   RedisPublisher redis_pub_;
 };
 

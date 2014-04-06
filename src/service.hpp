@@ -1,7 +1,7 @@
 #ifndef REINFERIO_SALTFISH_SERVICE_HPP
 #define REINFERIO_SALTFISH_SERVICE_HPP
 
-#include "sql_pool.hpp"
+#include "sql.hpp"
 #include "saltfish.pb.h"
 #include "saltfish.rpcz.h"
 
@@ -35,7 +35,7 @@ class SaltfishServiceImpl : public SaltfishService {
  public:
   SaltfishServiceImpl(
       riak::client& riak_client,
-      store::SourceMetadataSqlStoreTasklet& sql_store,
+      store::MetadataSqlStoreTasklet& sql_store,
       boost::asio::io_service& ios,
       uint32_t max_generate_id_count,
       const std::string& sources_data_bucket_prefix);
@@ -49,6 +49,8 @@ class SaltfishServiceImpl : public SaltfishService {
                              rpcz::reply<DeleteSourceResponse> reply) override;
   virtual void generate_id(const GenerateIdRequest& request,
                            rpcz::reply<GenerateIdResponse> reply) override;
+  virtual void list_sources(const ListSourcesRequest& request,
+                            rpcz::reply<ListSourcesResponse> reply) override;
   virtual void put_records(const PutRecordsRequest& request,
                            rpcz::reply<PutRecordsResponse> reply) override;
 
@@ -73,7 +75,7 @@ class SaltfishServiceImpl : public SaltfishService {
       const PutRecordsRequest& request);
 
   riak::client& riak_client_;
-  store::SourceMetadataSqlStoreTasklet& sql_store_;
+  store::MetadataSqlStoreTasklet& sql_store_;
   boost::asio::io_service& ios_;
 
   uint32_t max_generate_id_count_;

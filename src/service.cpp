@@ -126,7 +126,7 @@ inline void reply_with_status(
 
 SaltfishServiceImpl::SaltfishServiceImpl(
     riak::client& riak_client,
-    store::SourceMetadataSqlStoreTasklet& sql_store,
+    store::MetadataSqlStoreTasklet& sql_store,
     boost::asio::io_service& ios,
     uint32_t max_generate_id_count,
     const string& sources_data_bucket_prefix)
@@ -269,6 +269,28 @@ void SaltfishServiceImpl::generate_id(
   reply.send(response);
 }
 
+/***********                      list_sources                      ***********/
+
+void SaltfishServiceImpl::list_sources(
+    const ListSourcesRequest& request,
+    rpcz::reply<ListSourcesResponse> reply) {
+  using maybe_sources = boost::optional<vector<core::Source>>;
+  const int user_id{request.user_id()};
+  maybe_sources sources{sql_store_.list_sources(user_id)};
+
+  ListSourcesResponse response;
+  if (sources) {
+    response.set_status(ListSourcesResponse::OK);
+    for_each(sources->begin(), sources->end(),
+             [&](const core::Source& src) {
+               *(response.add_sources()) = src;
+             });
+  } else {
+    response.set_status(ListSourcesResponse::NETWORK_ERROR);
+  }
+  reply.send(response);
+}
+
 /***********                       put_records                      ***********/
 
 vector<string> SaltfishServiceImpl::ids_for_put_request(
@@ -403,8 +425,9 @@ void SaltfishServiceImpl::put_records(
             << " k=" << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
     // riak_client_.fetch(bucket.str(), record_id, handler);
     fetch_closures.emplace_back([this, bucket, record_id, handler] () {
-        this->riak_client_.fetch(bucket, record_id,
-                                 function<void(riak::object, const error_code)>{handler});
+        this->riak_client_.fetch(
+            bucket, record_id,
+            function<void(riak::object, const error_code)>{handler});
       });
   }
   for_each(fetch_closures.begin(), fetch_closures.end(),

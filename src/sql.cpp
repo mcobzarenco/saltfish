@@ -1,4 +1,4 @@
-#include "sql_pool.hpp"
+#include "sql.hpp"
 
 #include <glog/logging.h>
 #include <cppconn/exception.h>
@@ -28,14 +28,14 @@ std::unique_ptr<sql::Connection> connect_to_sql(
   return conn;
 }
 
-SourceMetadataSqlStore::SourceMetadataSqlStore(
+MetadataSqlStore::MetadataSqlStore(
     const std::string& host, const uint16_t port, const std::string& user,
     const std::string& pass, const std::string& db, const bool thread_init_end)
     : host_{host}, port_{port}, user_{user}, pass_{pass}, db_{db},
       thread_init_end_{thread_init_end}, driver_{nullptr} {
 }
 
-bool SourceMetadataSqlStore::ensure_connected() {
+bool MetadataSqlStore::ensure_connected() {
   if (!driver_) {
     driver_ = sql::mysql::get_driver_instance();
     CHECK(driver_) << "Could not retrieve MySQL driver";
@@ -60,12 +60,12 @@ bool SourceMetadataSqlStore::ensure_connected() {
   }
 }
 
-void SourceMetadataSqlStore::close() {
+void MetadataSqlStore::close() {
   if(driver_ != nullptr && thread_init_end_) driver_->threadEnd();
   LOG(INFO) << "Closing SQL connection";
 }
 
-boost::optional<std::vector<std::string>> SourceMetadataSqlStore::fetch_schema(
+boost::optional<std::vector<std::string>> MetadataSqlStore::fetch_schema(
     const std::string& source_id) {
   static constexpr char GET_SOURCE_TEMPLATE[] =
       "SELECT source_id, user_id, source_schema, name FROM sources "
@@ -86,13 +86,13 @@ boost::optional<std::vector<std::string>> SourceMetadataSqlStore::fetch_schema(
     }
     return boost::optional<std::vector<std::string>>{std::vector<std::string>{}};
   } catch (const sql::SQLException& e) {
-    LOG(WARNING) << "SourceMetadataSqlStore::fetch_schema() - sql exception - "
+    LOG(WARNING) << "MetadataSqlStore::fetch_schema() - sql exception - "
                  << e.what();
   }
   return boost::optional<std::vector<std::string>>{};
 }
 
-boost::optional<int> SourceMetadataSqlStore::create_source(
+boost::optional<int> MetadataSqlStore::create_source(
     const std::string& source_id, int user_id,
     const std::string& schema, const std::string& name) {
   static constexpr char CREATE_SOURCE_TEMPLATE[] =
@@ -108,13 +108,13 @@ boost::optional<int> SourceMetadataSqlStore::create_source(
     query->setString(4, name);
     return boost::optional<int>{query->executeUpdate()};
   } catch (const sql::SQLException& e) {
-    LOG(WARNING) << "SourceMetadataSqlStore::create_source() - sql exception - "
+    LOG(WARNING) << "MetadataSqlStore::create_source() - sql exception - "
                  << e.what();
   }
   return boost::optional<int>{};
 }
 
-boost::optional<int> SourceMetadataSqlStore::delete_source(
+boost::optional<int> MetadataSqlStore::delete_source(
     const std::string& source_id) {
   static constexpr char DELETE_SOURCE_TEMPLATE[] =
       "DELETE FROM sources WHERE source_id = ?";
@@ -128,52 +128,99 @@ boost::optional<int> SourceMetadataSqlStore::delete_source(
         << "source_id is a primary key, a max of 1 row can be affected";
     return boost::optional<int>{rows_updated};
   } catch (const sql::SQLException& e) {
-    LOG(WARNING) << "SourceMetadataSqlStore::delete_source() - sql exception - "
+    LOG(WARNING) << "MetadataSqlStore::delete_source() - sql exception - "
                  << e.what();
   }
   return boost::optional<int>{};
 }
 
-SourceMetadataSqlStoreTasklet::SourceMetadataSqlStoreTasklet(
+boost::optional<std::vector<core::Source>>
+MetadataSqlStore::list_sources(const int user_id) {
+  static constexpr char GET_SOURCE_TEMPLATE[] =
+      "SELECT source_id, user_id, source_schema, name FROM sources "
+      "WHERE user_id = ?";
+  if (!ensure_connected()) {
+    return boost::optional<std::vector<core::Source>>{};
+  }
+  try {
+    std::unique_ptr<sql::PreparedStatement> get_query{
+      conn_->prepareStatement(GET_SOURCE_TEMPLATE)};
+    get_query->setInt(1, user_id);
+    std::unique_ptr<sql::ResultSet> res{get_query->executeQuery()};
+    std::vector<core::Source> sources;
+
+    LOG(INFO) << res->rowsCount() << " sources for used_id=" << user_id;
+    while(res->next()) {
+      core::Source src;
+      if (!src.mutable_schema()->ParseFromString(
+              res->getString("source_schema"))) {
+        return boost::optional<std::vector<core::Source>>{};
+      }
+      src.set_source_id(res->getString("source_id"));
+      src.set_user_id(res->getInt("user_id"));
+      src.set_name(res->getString("name"));
+      sources.push_back(src);
+    }
+    return boost::optional<std::vector<core::Source>>{sources};
+  } catch (const sql::SQLException& e) {
+    LOG(WARNING) << "MetadataSqlStore::list_sources() - sql exception - "
+                 << e.what();
+  }
+  return boost::optional<std::vector<core::Source>>{};
+}
+
+MetadataSqlStoreTasklet::MetadataSqlStoreTasklet(
     zmq::context_t& context, const std::string& host, const uint16_t port,
     const std::string& user, const std::string& pass, const std::string& db)
-    : store_{new SourceMetadataSqlStore{host, port, user, pass, db, true}},
+    : store_{new MetadataSqlStore{host, port, user, pass, db, true}},
       tasklet_{context, []() { }, [&]() { store_.reset(nullptr); }} {
 }
 
-boost::optional<std::vector<std::string>> SourceMetadataSqlStoreTasklet::fetch_schema(
-    const std::string& source_id) {
+boost::optional<std::vector<std::string>>
+MetadataSqlStoreTasklet::fetch_schema(const std::string& source_id) {
   using namespace std::placeholders;
   if (!fetch_schema_.get()) {
     fetch_schema_.reset(new lib::Connection<fetch_schema_type>{
         std::move(tasklet_.connect(fetch_schema_type(std::bind(
-            &SourceMetadataSqlStore::fetch_schema, store_.get(), _1))))});
+            &MetadataSqlStore::fetch_schema, store_.get(), _1))))});
   }
   return fetch_schema_->operator()(source_id);
 }
 
-boost::optional<int> SourceMetadataSqlStoreTasklet::create_source(
+boost::optional<int> MetadataSqlStoreTasklet::create_source(
     const std::string& source_id, int user_id,
     const std::string& schema, const std::string& name) {
   using namespace std::placeholders;
   if (!create_source_.get()) {
     create_source_.reset(new lib::Connection<create_source_type>{
         std::move(tasklet_.connect(create_source_type(std::bind(
-            &SourceMetadataSqlStore::create_source, store_.get(), _1, _2, _3, _4))))
+            &MetadataSqlStore::create_source, store_.get(), _1, _2, _3, _4))))
             });
   }
   return create_source_->operator()(source_id, user_id, schema, name);
 }
 
-boost::optional<int> SourceMetadataSqlStoreTasklet::delete_source(
+boost::optional<int> MetadataSqlStoreTasklet::delete_source(
     const std::string& source_id) {
   using namespace std::placeholders;
   if (!delete_source_.get()) {
     delete_source_.reset(new lib::Connection<delete_source_type>{
         std::move(tasklet_.connect(delete_source_type(std::bind(
-            &SourceMetadataSqlStore::delete_source, store_.get(), _1))))});
+            &MetadataSqlStore::delete_source, store_.get(), _1))))});
   }
   return delete_source_->operator()(source_id);
 }
+
+boost::optional<vector<core::Source>>
+MetadataSqlStoreTasklet::list_sources(const int user_id) {
+  using namespace std::placeholders;
+  if (!list_sources_.get()) {
+    list_sources_.reset(new lib::Connection<list_sources_type>{
+        std::move(tasklet_.connect(list_sources_type(std::bind(
+            &MetadataSqlStore::list_sources, store_.get(), _1))))});
+  }
+  return list_sources_->operator()(user_id);
+}
+
 
 }}}  // namespace reinferio::saltfish::store

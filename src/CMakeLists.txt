@@ -25,8 +25,8 @@ target_link_libraries(service_pb_lib source_pb_lib)
 
 add_library(
   sql_pool
-    sql_pool.hpp
-    sql_pool.cpp
+    sql.hpp
+    sql.cpp
 )
 target_link_libraries(
   sql_pool

@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import argparse
+from base64 import b64decode, b64encode
 import unittest
 import sys
 import time
-import argparse
 import multiprocessing
 import logging
 import struct
@@ -25,7 +26,8 @@ from reinferio.saltfish_pb2 import \
     CreateSourceRequest, CreateSourceResponse, \
     DeleteSourceRequest, DeleteSourceResponse, \
     GenerateIdRequest,   GenerateIdResponse, \
-    PutRecordsRequest,   PutRecordsResponse
+    PutRecordsRequest,   PutRecordsResponse, \
+    ListSourcesRequest, ListSourcesResponse
 
 
 PROTO_ROOT = join('..', 'src', 'proto')
@@ -48,13 +50,13 @@ compiler.generate_proto(join(PROTO_ROOT, 'config.proto'), '.')
 import config_pb2
 
 
-def make_create_source_req(source_id=None, name=None, features=None):
+def make_create_source_req(
+        source_id=None, user_id=None, name=None, features=None):
     features = features or []
     request = CreateSourceRequest()
-    if source_id:
-        request.source.source_id = source_id
-    if name:
-        request.source.name = name
+    if source_id:  request.source.source_id = source_id
+    if user_id:  request.source.user_id = user_id
+    if name:  request.source.name = name
     for f in features:
         new_feat = request.source.schema.features.add()
         new_feat.name = f['name']
@@ -187,12 +189,14 @@ class SaltfishTests(unittest.TestCase):
                  'Error expected (source_id=%s)' % uuid2hex(source_id))
         features = deepcopy(self._features)
         features[1]['type'] = core_pb2.Feature.CATEGORICAL
-        request3 = make_create_source_req(source_id, request.source.name, features)
+        request3 = make_create_source_req(
+            source_id, request.source.user_id, request.source.name, features)
         response3 = self._service.create_source(request3,
                                                 deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(CreateSourceResponse.SOURCE_ID_ALREADY_EXISTS,
                          response3.status)
         log.info('Got error message: "%s"' % response3.msg)
+        return response
 
     def try_delete_source(self, source_id):
         request = DeleteSourceRequest()
@@ -204,16 +208,18 @@ class SaltfishTests(unittest.TestCase):
     ### Test functions ###
     def test_create_source_with_given_id(self):
         source_id = uuid.uuid4()
+        user_id = 1001
         source_name = ur"Some Test Source-123客\x00家話\\;"
-        request = make_create_source_req(source_id.get_bytes(),
-                                         source_name, self._features)
+        request = make_create_source_req(
+            source_id.get_bytes(), user_id, source_name, self._features)
         log.info('Creating a new source with a given id (id=%s)..' %
                  uuid2hex(source_id.get_bytes()))
         self.try_create_source(request)
 
     def test_create_source_with_no_id(self):
         source_name = u"Some Other Source 客家話 -- £$"
-        request = make_create_source_req(name=source_name, features=self._features)
+        request = make_create_source_req(
+            name=source_name, features=self._features)
         log.info('Creating a new source without setting the id..')
         self.try_create_source(request)
 
@@ -221,10 +227,12 @@ class SaltfishTests(unittest.TestCase):
         source_id = uuid.uuid4().get_bytes()
         self._features.append(self._features[0])
         request = make_create_source_req(source_id, features=self._features)
-        log.info("Creating source with duplicate feature name in schema. Error expected")
-        response = self._service.create_source(request,
-                                               deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(CreateSourceResponse.DUPLICATE_FEATURE_NAME, response.status)
+        log.info("Creating source with duplicate feature name in schema." \
+                 " Error expected")
+        response = self._service.create_source(
+            request, deadline_ms=DEFAULT_DEADLINE)
+        self.assertEqual(CreateSourceResponse.DUPLICATE_FEATURE_NAME,
+                         response.status)
         log.info('Got error message: "%s"' % response.msg)
         self.assertEqual(0, len(SaltfishTests.fetch_source(source_id)))
 
@@ -238,10 +246,11 @@ class SaltfishTests(unittest.TestCase):
         source_id = create_response.source_id
         self.assertEqual(1, len(SaltfishTests.fetch_source(source_id)))
 
-        log.info('Deleting the just created source with id=%s' % uuid2hex(source_id))
+        log.info('Deleting the just created source with id=%s'
+                 % uuid2hex(source_id))
         delete_request.source_id = source_id
-        delete_response = self._service.delete_source(delete_request,
-                                                      deadline_ms=DEFAULT_DEADLINE)
+        delete_response = self._service.delete_source(
+            delete_request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(DeleteSourceResponse.OK, delete_response.status)
         self.assertEqual(True, delete_response.updated)
         self.assertEqual(0, len(SaltfishTests.fetch_source(source_id)))
@@ -289,10 +298,12 @@ class SaltfishTests(unittest.TestCase):
         self.assertEqual(0, len(response.ids))
         log.info('Got error message: "%s"' % response.msg)
 
-    def _ensure_source(self, source_id=None, name=None, features=None):
-        create_req = make_create_source_req(source_id, name, features)
-        create_resp = self._service.create_source(create_req,
-                                                  deadline_ms=DEFAULT_DEADLINE)
+    def _ensure_source(self, source_id=None, user_id=None,
+                       name=None, features=None):
+        create_req = make_create_source_req(
+            source_id, user_id, name, features)
+        create_resp = self._service.create_source(
+            create_req, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(CreateSourceResponse.OK, create_resp.status)
         return create_resp
 
@@ -328,6 +339,44 @@ class SaltfishTests(unittest.TestCase):
         self.assertEqual(PutRecordsResponse.INVALID_SOURCE_ID, response.status)
         self.assertEqual(0, len(response.record_ids))
         log.info('Got error message: "%s"' % response.msg)
+
+    def test_list_sources(self):
+        source_names = ['src1', 'src2', 'src3'];
+        create_reqs = {}
+        user_id=randint(1, 100000000)
+        for name in source_names:
+            request = make_create_source_req(
+                name=name, user_id=user_id, features=self._features)
+            log.info('Creating source "%s" for user_id=%d'
+                     % (name, user_id))
+            response = self._service.create_source(
+                request, deadline_ms=DEFAULT_DEADLINE)
+            self.assertEqual(CreateSourceResponse.OK, response.status)
+            self.verify_created_source(response.source_id, request)
+            create_reqs[response.source_id] = request
+
+        request = ListSourcesRequest()
+        request.user_id = user_id
+        response = self._service.list_sources(
+            request, deadline_ms=DEFAULT_DEADLINE)
+        self.assertEqual(ListSourcesResponse.OK, response.status)
+        self.assertEqual(len(source_names), len(response.sources))
+
+        source_ids = set(create_reqs.keys())
+        for source in response.sources:
+            self.assertIn(
+                source.source_id, source_ids,
+                "A source with id=%s was returned by list_sources"
+                " for user_id=%d although it was not created in the test;"
+                " remaining expected source_ids=%s"
+                % (b64encode(source.source_id), user_id,
+                   map(b64encode, source_ids)))
+            source_id = source.source_id
+            request = create_reqs[source_id]
+            self.assertEqual(request.source.schema, source.schema)
+            self.assertEqual(request.source.name, source.name)
+            self.assertEqual(user_id, source.user_id)
+            source_ids.remove(source.source_id)
 
     @unittest.skip("")
     def test_rabbitmq_publisher(self):
