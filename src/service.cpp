@@ -68,9 +68,13 @@ inline void reply_with_status(
           {CreateSourceResponse::DUPLICATE_FEATURE_NAME,
                 "The provided schema contains duplicate feature names."},
           {CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS,
-                "A source with the same id, but different schema already exists"},
+                "A source with the same id, but different schema already exists."},
           {CreateSourceResponse::INVALID_SOURCE_ID,
-                "The source id provided is invalid"},
+                "The source id provided is invalid."},
+          {CreateSourceResponse::INVALID_USER_ID,
+                "The user id provided is invalid."},
+          {CreateSourceResponse::INVALID_FEATURE_TYPE,
+                "The schema contains invalid feature types."},
           {CreateSourceResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
         });
 
@@ -157,6 +161,10 @@ void SaltfishServiceImpl::create_source(
   if (schema_has_duplicates(source.schema())) {
     reply_with_status(CreateSourceResponse::DUPLICATE_FEATURE_NAME, reply);
     return;
+  } else if (schema_has_invalid_features(source.schema())) {
+    reply_with_status(CreateSourceResponse::INVALID_FEATURE_TYPE, reply);
+    LOG(INFO) << "INVALID_FEATURE_TYPE";
+    return;
   }
   string source_id;
   bool new_source_id{false};
@@ -182,7 +190,8 @@ void SaltfishServiceImpl::create_source(
       return;
     }
     if (remote_schema->size() > 0) {
-      if (remote_schema->front() == request.source().schema().SerializeAsString()) {
+      if (remote_schema->front() ==
+          source.schema().SerializeAsString()) {
         // Trying to create a source that already exists with identical schema
         // Nothing to do - send OK such that the call is idempotent
         CreateSourceResponse response;
@@ -194,7 +203,8 @@ void SaltfishServiceImpl::create_source(
         LOG(INFO) << "A source with the same id, but different schema "
                   << "already exists (source_id="
                   << string_to_hex(source_id) << ")";
-        reply_with_status(CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
+        reply_with_status(
+            CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
         return;
       }
     }

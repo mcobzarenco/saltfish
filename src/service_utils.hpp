@@ -57,7 +57,7 @@ inline std::string string_to_hex(const std::string& source_id) {
   return out.str();
 }
 
-inline bool schema_has_duplicates(const core::Schema& schema){
+inline bool schema_has_duplicates(const core::Schema& schema) {
     using Compare = bool(*)(const std::string*, const std::string*);
     std::set<const std::string*, Compare> unique_names{
         [](const std::string* a, const std::string* b) { return *a < *b; } };
@@ -65,6 +65,14 @@ inline bool schema_has_duplicates(const core::Schema& schema){
         unique_names.insert(&feature.name());
     }
     return unique_names.size() != static_cast<size_t>(schema.features().size());
+}
+
+inline bool schema_has_invalid_features(const core::Schema& schema) {
+  auto is_invalid = [](const core::Feature& feat) -> bool {
+    return feat.feature_type() == core::Feature::INVALID; };
+  using Compare = bool(*)(const std::string*, const std::string*);
+  return std::any_of(schema.features().begin(),
+                     schema.features().end(), is_invalid);
 }
 
 class MaybeError {

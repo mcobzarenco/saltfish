@@ -78,6 +78,36 @@ TEST(SchemaHasDuplicatesTest, EmptyNoDupsAndDups) {
       << "feature_1 is duplicated";
 }
 
+TEST(SchemaHasInvalidFeatures, ValidAndInvalidFeatures) {
+  core::Schema schema;
+  EXPECT_FALSE(saltfish::schema_has_invalid_features(schema))
+      << "empty schema - does not have invalid features";
+
+  core::Feature* feat{nullptr};
+  feat = schema.add_features();
+  feat->set_name("feature_1");
+  feat->set_feature_type(core::Feature::REAL);
+  EXPECT_FALSE(saltfish::schema_has_invalid_features(schema))
+      << "there are no  invalid features";
+
+  feat = schema.add_features();
+  feat->set_name("feature_2");
+  feat->set_feature_type(core::Feature::TEXT);
+  EXPECT_FALSE(saltfish::schema_has_invalid_features(schema))
+      << "there are no invalid features";
+
+  feat = schema.add_features();
+  feat->set_name("feature_3");
+  feat->set_feature_type(core::Feature::INVALID);
+
+  feat = schema.add_features();
+  feat->set_name("feature_4");
+  feat->set_feature_type(core::Feature::CATEGORICAL);
+  EXPECT_TRUE(saltfish::schema_has_invalid_features(schema))
+      << "feature_3 is invalid";
+}
+
+
 class CheckRecordTest : public ::testing::Test {
  protected:
   virtual void SetUp() {

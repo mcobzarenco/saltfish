@@ -20,6 +20,8 @@ import pymysql
 import riak
 import uuid
 
+from reinferio.store import SqlStore
+
 from reinferio import core_pb2
 from reinferio import saltfish_pb2
 from reinferio.saltfish_pb2 import \
@@ -40,7 +42,7 @@ SOURCES_DATA_BUCKET_ROOT = '/ml/sources/data/'
 TEST_PASSED = '*** OK ***'
 FAILED_PREFIX = 'TEST FAILED | '
 
-DEFAULT_DEADLINE = 500
+DEFAULT_DEADLINE = 3
 
 log = multiprocessing.log_to_stderr()
 log.setLevel(logging.INFO)
@@ -59,8 +61,8 @@ def make_create_source_req(
     if name:  request.source.name = name
     for f in features:
         new_feat = request.source.schema.features.add()
-        new_feat.name = f['name']
-        new_feat.feature_type = f['type']
+        if 'name' in f:  new_feat.name = f['name']
+        if 'type' in f:  new_feat.feature_type = f['type']
     return request
 
 
@@ -112,29 +114,30 @@ class SaltfishTests(unittest.TestCase):
             protocol='pbc',
             host=cls._config.riak.host,
             pb_port=cls._config.riak.port)
-        cls._sqlc = pymysql.connect(
+        cls._sql = SqlStore(
             host=cls._config.maria_db.host,
             port=cls._config.maria_db.port,
             user=cls._config.maria_db.user,
             passwd=cls._config.maria_db.password,
-            db=cls._config.maria_db.db,
-            use_unicode=True,
-            charset='utf8')
-        cls._sqlc.autocommit(True)
+            db=cls._config.maria_db.db)
+
+        # Create a test user:
+        conn = cls._sql.check_out_connection()
+        cur = conn.cursor()
+        cur.execute('DELETE FROM sources')
+        cur.execute('DELETE FROM users')
+        cls._sql.check_in_connection(conn)
+
+        user_id1 = cls._sql.create_user('marius@test.io', 'abcd', True)
+        user_id2 = cls._sql.create_user('reinfer@test.io', 'abcde', False)
+        cls._user_id1 = user_id1
+        cls._user_id2 = user_id2
+
+        assert(user_id1 is not None and user_id2 is not None)
 
     @classmethod
     def tearDownClass(cls):
         pass
-
-    @classmethod
-    def fetch_source(cls, source_id):
-        COLS = ['source_id', 'user_id', 'source_schema', 'name', 'created']
-        cur = cls._sqlc.cursor()
-        cur.execute(
-            'select source_id, user_id, source_schema, name, created '
-            'from sources where source_id = %s', (source_id, ))
-        rows = cur.fetchall()
-        return map(lambda x: dict(zip(COLS, x)), rows)
 
     def setUp(self):
         self._features = [
@@ -156,16 +159,15 @@ class SaltfishTests(unittest.TestCase):
         ]
 
     def verify_created_source(self, source_id, request):
-        remote = SaltfishTests.fetch_source(source_id)
-        self.assertEqual(1, len(remote))
-        remote = remote[0]
+        remote = self.__class__._sql.get_source(source_id)
+        self.assertIsNotNone(remote)
 
         remote_schema = core_pb2.Schema()
-        remote_schema.ParseFromString(remote['source_schema'])
+        remote_schema.ParseFromString(remote.source_schema)
         if request.source.source_id != '':
-            self.assertEqual(request.source.source_id, remote['source_id'])
-        self.assertEqual(request.source.user_id, remote['user_id'])
-        self.assertEqual(request.source.name, remote['name'])
+            self.assertEqual(request.source.source_id, remote.source_id)
+        self.assertEqual(request.source.user_id, remote.user_id)
+        self.assertEqual(request.source.name, remote.name)
         self.assertEqual(request.source.schema.features,
                          remote_schema.features)
 
@@ -206,9 +208,9 @@ class SaltfishTests(unittest.TestCase):
         return response
 
     ### Test functions ###
-    def test_create_source_with_given_id(self):
+    def test_create_source_with_given_source_id(self):
         source_id = uuid.uuid4()
-        user_id = 1001
+        user_id = self.__class__._user_id1
         source_name = ur"Some Test Source-123客\x00家話\\;"
         request = make_create_source_req(
             source_id.get_bytes(), user_id, source_name, self._features)
@@ -216,17 +218,32 @@ class SaltfishTests(unittest.TestCase):
                  uuid2hex(source_id.get_bytes()))
         self.try_create_source(request)
 
-    def test_create_source_with_no_id(self):
+    def test_create_source_with_no_source_id(self):
+        user_id = self.__class__._user_id2
         source_name = u"Some Other Source 客家話 -- £$"
         request = make_create_source_req(
-            name=source_name, features=self._features)
+            user_id=user_id, name=source_name, features=self._features)
         log.info('Creating a new source without setting the id..')
         self.try_create_source(request)
 
+    def test_create_source_with_invalid_user_id(self):
+        user_id = 1
+        source_name = u"Source 123"
+        request = make_create_source_req(
+            user_id=user_id, name=source_name, features=self._features)
+        log.info("Creating source with an invalid user_id. Error expected")
+        response = self._service.create_source(
+            request, deadline_ms=DEFAULT_DEADLINE)
+        self.assertEqual(CreateSourceResponse.INVALID_USER_ID, response.status)
+        log.info('Got error message: "%s"' % response.msg)
+        self.assertIsNone(self.__class__._sql.get_source(response.source_id))
+
     def test_create_source_duplicate_feature_name(self):
+        user_id = self.__class__._user_id2
         source_id = uuid.uuid4().get_bytes()
         self._features.append(self._features[0])
-        request = make_create_source_req(source_id, features=self._features)
+        request = make_create_source_req(source_id, user_id,
+                                         features=self._features)
         log.info("Creating source with duplicate feature name in schema." \
                  " Error expected")
         response = self._service.create_source(
@@ -234,17 +251,35 @@ class SaltfishTests(unittest.TestCase):
         self.assertEqual(CreateSourceResponse.DUPLICATE_FEATURE_NAME,
                          response.status)
         log.info('Got error message: "%s"' % response.msg)
-        self.assertEqual(0, len(SaltfishTests.fetch_source(source_id)))
+        self.assertIsNone(self.__class__._sql.get_source(source_id))
+
+    def test_create_source_with_invalid_feature_type(self):
+        user_id = self.__class__._user_id1
+        features = self._features
+        for feat in features:
+            del feat['type']
+        request = make_create_source_req(
+            user_id=user_id, name="Source with invalid feature types",
+            features=features)
+        log.info("Creating source with invalid features in schema." \
+                 " Error expected")
+
+        response = self._service.create_source(
+            request, deadline_ms=DEFAULT_DEADLINE)
+        self.assertEqual(CreateSourceResponse.INVALID_FEATURE_TYPE,
+                         response.status)
 
     def test_delete_source(self):
-        create_request = make_create_source_req(features=self._features)
+        user_id = self.__class__._user_id1
+        create_request = make_create_source_req(
+            user_id=user_id, features=self._features)
         delete_request = DeleteSourceRequest()
         log.info('Creating a source in order to delete it..')
         create_response = self._service.create_source(
             create_request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(CreateSourceResponse.OK, create_response.status)
         source_id = create_response.source_id
-        self.assertEqual(1, len(SaltfishTests.fetch_source(source_id)))
+        self.assertIsNotNone(self.__class__._sql.get_source(source_id))
 
         log.info('Deleting the just created source with id=%s'
                  % uuid2hex(source_id))
@@ -253,7 +288,7 @@ class SaltfishTests(unittest.TestCase):
             delete_request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(DeleteSourceResponse.OK, delete_response.status)
         self.assertEqual(True, delete_response.updated)
-        self.assertEqual(0, len(SaltfishTests.fetch_source(source_id)))
+        self.assertIsNone(self.__class__._sql.get_source(source_id))
 
         log.info('Making a 2nd identical delete_source call '
                  'to check idempotency (source_id=%s)'  % uuid2hex(source_id))
@@ -261,7 +296,7 @@ class SaltfishTests(unittest.TestCase):
             delete_request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(DeleteSourceResponse.OK, delete_response.status)
         self.assertEqual(False, delete_response.updated)
-        self.assertEqual(0, len(SaltfishTests.fetch_source(source_id)))
+        self.assertIsNone(self.__class__._sql.get_source(source_id))
 
     def test_delete_source_invalid_ids(self):
         log.info('Sending delete_request with invalid ids. Errors expected')
@@ -309,7 +344,8 @@ class SaltfishTests(unittest.TestCase):
 
     def test_put_records_with_new_source(self):
         log.info('Creating a source where the records will be inserted..')
-        source_id = self._ensure_source(features=self._features).source_id
+        source_id = self._ensure_source(user_id=self.__class__._user_id1,
+                                        features=self._features).source_id
 
         log.info('Inserting %d records into newly created source (id=%s)' %
                      (len(self._records), uuid2hex(source_id)))
@@ -343,7 +379,8 @@ class SaltfishTests(unittest.TestCase):
     def test_list_sources(self):
         source_names = ['src1', 'src2', 'src3'];
         create_reqs = {}
-        user_id=randint(1, 100000000)
+        user_id = self.__class__._sql.create_user(
+            'list@test.io', 'qwerty', False)
         for name in source_names:
             request = make_create_source_req(
                 name=name, user_id=user_id, features=self._features)
