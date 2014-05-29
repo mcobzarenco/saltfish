@@ -3,7 +3,7 @@
 
 #include "sql.hpp"
 #include "publishers.hpp"
-#include "config.pb.h"
+#include "proto/config.pb.h"
 
 #include <riakpp/client.hpp>
 #include <rpcz/rpcz.hpp>

@@ -84,30 +84,20 @@ function(PROTOBUF_GENERATE_PYTHON SRCS)
   set(${SRCS} ${_SRCS} PARENT_SCOPE)
 endfunction()
 
-function(PROTOBUF_GENERATE_CPP_F SRCS HDRS OPTS)
-  message(${OPTS})
+function(PROTOBUF_GENERATE_CPP_F SRCS HDRS PROTO_ROOT)
   PROTOBUF_GENERATE_MULTI(PLUGIN "cpp"
                           PLUGIN_NAME "C++"
-                          FLAGS ${OPTS}
+                          PROTO_ROOT ${PROTO_ROOT}
                           PROTOS ${ARGN}
                           OUTPUT_STRUCT "_SRCS:.pb.cc;_HDRS:.pb.h" )
   set(${SRCS} ${_SRCS} PARENT_SCOPE)
   set(${HDRS} ${_HDRS} PARENT_SCOPE)
 endfunction()
 
-function(PROTOBUF_GENERATE_PYTHON_F SRCS OPTS)
-  PROTOBUF_GENERATE_MULTI(PLUGIN "python"
-                          PLUGIN_NAME "Python"
-                          FLAGS ${OPTS}
-                          PROTOS ${ARGN}
-                          OUTPUT_STRUCT "_SRCS:_pb2.py" )
-  set(${SRCS} ${_SRCS} PARENT_SCOPE)
-endfunction()
-
 
 function(PROTOBUF_GENERATE_MULTI)
   CMAKE_PARSE_ARGUMENTS(OPTIONS "" "PLUGIN;PLUGIN_NAME"
-                        "PROTOS;OUTPUT_STRUCT;FLAGS;DEPENDS" ${ARGN})
+                        "PROTO_ROOT;PROTOS;OUTPUT_STRUCT;FLAGS;DEPENDS" ${ARGN})
   if(NOT OPTIONS_PROTOS)
     message(SEND_ERROR "Error: PROTOBUF_GENERATE_MULTI() called without any proto files")
     return()
@@ -115,6 +105,7 @@ function(PROTOBUF_GENERATE_MULTI)
   _protobuf_generate_path(INCLUDE_FLAG ${OPTIONS_PROTOS})
 
   foreach(FIL ${OPTIONS_PROTOS})
+    get_filename_component(FIL_PATH ${FIL} PATH)
     get_filename_component(FIL_WE ${FIL} NAME_WE)
     set(OUTPUTS)
     foreach(OUTPUT_ITEM_STR ${OPTIONS_OUTPUT_STRUCT})
@@ -128,15 +119,23 @@ function(PROTOBUF_GENERATE_MULTI)
       endif()
       list(GET OUTPUT_ITEM 0 VARNAME)
       list(GET OUTPUT_ITEM 1 SUFFIX)
-      set(OUTFILE "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}${SUFFIX}")
+      set(OUTFILE "${CMAKE_CURRENT_BINARY_DIR}/${FIL_PATH}/${FIL_WE}${SUFFIX}")
       list(APPEND OUTPUTS ${OUTFILE})
       list(APPEND _${VARNAME} ${OUTFILE})
     endforeach()
+    if (PROTO_ROOT)
+      set(FIL "${PROTO_ROOT}/${FIL}")
+      list(APPEND OPTIONS_FLAGS "-I${PROTO_ROOT}")
+    else()
+      get_filename_component(FIL ${FIL} ABSOLUTE)
+      list(APPEND OPTIONS_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")
+    endif()
+
     PROTOBUF_GENERATE_SINGLE(PLUGIN ${OPTIONS_PLUGIN} FILE ${FIL}
                              PLUGIN_NAME ${OPTIONS_PLUGIN_NAME}
                              OUTPUTS ${OUTPUTS}
                              DEPENDS ${OPTIONS_DEPENDS}
-                             FLAGS ${INCLUDE_FLAG} ${OPTIONS_FLAGS})
+                             FLAGS ${OPTIONS_FLAGS} ${INCLUDE_FLAG})
   endforeach()
 
   # Propagate output variables to parent scope
@@ -172,12 +171,11 @@ function(PROTOBUF_GENERATE_SINGLE)
   if(NOT OPTIONS_PLUGIN_NAME)
     set(OPTIONS_PLUGIN_NAME ${OPTIONS_PLUGIN})
   endif(NOT OPTIONS_PLUGIN_NAME)
-  get_filename_component(ABS_FILE ${OPTIONS_FILE} ABSOLUTE)
   add_custom_command(
     OUTPUT ${OPTIONS_OUTPUTS}
     COMMAND  ${PROTOBUF_PROTOC_EXECUTABLE}
     ARGS --${OPTIONS_PLUGIN}_out  ${CMAKE_CURRENT_BINARY_DIR} ${OPTIONS_FLAGS}
-         ${ABS_FILE}
+         ${OPTIONS_FILE}
     DEPENDS ${OPTIONS_FILE} ${OPTIONS_DEPENDS}
     COMMENT "Running ${OPTIONS_PLUGIN_NAME} protocol buffer compiler on ${OPTIONS_FILE}"
     VERBATIM )

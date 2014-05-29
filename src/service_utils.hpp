@@ -1,7 +1,7 @@
 #ifndef REINFERIO_SALTFISH_SERVICE_UTILS_HPP
 #define REINFERIO_SALTFISH_SERVICE_UTILS_HPP
 
-#include "saltfish.rpcz.h"
+#include "reinferio/saltfish.rpcz.h"
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>

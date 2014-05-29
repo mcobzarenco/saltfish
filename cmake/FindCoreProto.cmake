@@ -11,7 +11,7 @@
 SET(COMMON_PROTO_ROOT /usr/share/proto)
 
 IF (EXISTS "${COMMON_PROTO_ROOT}/reinferio/core.proto")
-  SET(COREPROTO_PATH "${COMMON_PROTO_ROOT}/reinferio/core.proto")
+  SET(COREPROTO_PATH "reinferio/core.proto")
   SET(COREPROTO_FOUND on)
 ELSE ()
   SET(COREPROTO_FOUND off)

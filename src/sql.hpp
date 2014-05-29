@@ -2,7 +2,7 @@
 #define REINFERIO_SALTFISH_SQL_POOL_HPP
 
 #include "tasklet.hpp"
-#include "core.pb.h"
+#include "reinferio/core.pb.h"
 
 #include <cppconn/connection.h>
 #include <boost/optional.hpp>

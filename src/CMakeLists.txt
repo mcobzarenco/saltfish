@@ -8,14 +8,17 @@ protobuf_generate_cpp(
   CONFIG_PB_SRCS CONFIG_PB_HDRS proto/config.proto)
 set(CONFIG_PB ${CONFIG_PB_SRCS} ${CONFIG_PB_HDRS})
 
-protobuf_generate_cpp(
-  CORE_PB_SRCS CORE_PB_HDRS ${COREPROTO_PATH})
+protobuf_generate_cpp_f(
+  CORE_PB_SRCS CORE_PB_HDRS
+  ${COMMON_PROTO_ROOT} ${COREPROTO_PATH})
 set(CORE_PB ${CORE_PB_SRCS} ${CORE_PB_HDRS})
 
-protobuf_generate_cpp(
-  SERVICE_PB_SRCS SERVICE_PB_HDRS ${SALTFISHPROTO_PATH})
-protobuf_generate_rpcz(
-  SERVICE_RPCZ_SRCS SERVICE_RPCZ_HDRS ${SALTFISHPROTO_PATH})
+protobuf_generate_cpp_f(
+  SERVICE_PB_SRCS SERVICE_PB_HDRS
+  ${COMMON_PROTO_ROOT} ${SALTFISHPROTO_PATH})
+protobuf_generate_rpcz_f(
+  SERVICE_RPCZ_SRCS SERVICE_RPCZ_HDRS
+  ${COMMON_PROTO_ROOT} ${SALTFISHPROTO_PATH})
 set(SERVICE_PB ${SERVICE_PB_SRCS} ${SERVICE_PB_HDRS}
   ${SERVICE_RPCZ_SRCS} ${SERVICE_RPCZ_HDRS})
 
@@ -33,6 +36,7 @@ target_link_libraries(
     mysqlclient
     mysqlcppconn
     zmq
+    service_pb_lib
 )
 
 add_library(

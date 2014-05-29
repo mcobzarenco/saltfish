@@ -5,7 +5,7 @@
 #include "service.hpp"
 #include "publishers.hpp"
 
-#include "saltfish.pb.h"
+#include "reinferio/saltfish.pb.h"
 
 
 namespace reinferio {

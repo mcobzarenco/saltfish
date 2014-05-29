@@ -1,7 +1,7 @@
 #ifndef REINFERIO_SALTFISH_SALTFISH_CONFIG_HPP
 #define REINFERIO_SALTFISH_SALTFISH_CONFIG_HPP
 
-#include "config.pb.h"
+#include "proto/config.pb.h"
 
 #include <google/protobuf/text_format.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>

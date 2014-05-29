@@ -17,11 +17,11 @@ function(PROTOBUF_GENERATE_PYTHON_RPCZ SRCS)
   set(${SRCS} ${_SRCS} PARENT_SCOPE)
 endfunction()
 
-function(PROTOBUF_GENERATE_RPCZ_F SRCS HDRS OPTS)
+function(PROTOBUF_GENERATE_RPCZ_F SRCS HDRS PROTO_ROOT)
   PROTOBUF_GENERATE_MULTI(PLUGIN "cpp_rpcz" PROTOS ${ARGN}
                           OUTPUT_STRUCT "_SRCS:.rpcz.cc;_HDRS:.rpcz.h"
+                          PROTO_ROOT ${PROTO_ROOT}
                           FLAGS ${OPTS}
-                          # FLAGS "--plugin=protoc-gen-cpp_rpcz=${RPCZ_PLUGIN_CPP_BIN}"
                           DEPENDS ${PLUGIN_BIN})
   set(${SRCS} ${_SRCS} PARENT_SCOPE)
   set(${HDRS} ${_HDRS} PARENT_SCOPE)
