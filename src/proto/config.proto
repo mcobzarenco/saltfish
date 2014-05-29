@@ -28,5 +28,5 @@ message Saltfish {
 
   optional uint32 max_generate_id_count = 5      [default = 1000];
   optional string sources_data_bucket_prefix = 6 [default = "/sources/data"];
-  optional string schemas_bucket_prefix = 7      [default = "/sources/schemas"];
+  optional string schemas_bucket = 7      [default = "/sources/schemas"];
 }

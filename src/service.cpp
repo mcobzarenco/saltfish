@@ -134,13 +134,13 @@ SaltfishServiceImpl::SaltfishServiceImpl(
     boost::asio::io_service& ios,
     uint32_t max_generate_id_count,
     const string& sources_data_bucket_prefix,
-    const string& schemas_bucket_prefix)
+    const string& schemas_bucket)
     :  riak_client_{riak_client},
        sql_store_{sql_store},
        ios_{ios},
        max_generate_id_count_{max_generate_id_count},
        sources_data_bucket_prefix_{sources_data_bucket_prefix},
-       schemas_bucket_prefix_{schemas_bucket_prefix} {
+       schemas_bucket_{schemas_bucket} {
 }
 
 void SaltfishServiceImpl::async_call_listeners(
@@ -220,7 +220,7 @@ void SaltfishServiceImpl::create_source(
 
   if (resp) {
     // Store a copy of the schema (which is immutable anyway) in Riak
-    riak::object object(schemas_bucket_prefix_, source_id);
+    riak::object object(schemas_bucket_, source_id);
     source.schema().SerializeToString(&object.value());
     riak_client_.store(
         object, [&reply, source_id, this] (const error_code error) {

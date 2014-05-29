@@ -163,13 +163,13 @@ class SaltfishTests(unittest.TestCase):
         remote = cls._sql.get_source(source_id)
         # Also get the schema cached in Riak:
         cached = cls._riakc \
-                    .bucket(cls._config.schemas_bucket_prefix) \
+                    .bucket(cls._config.schemas_bucket) \
                     .get_binary(BinaryString(source_id))
         self.assertIsNotNone(remote)
         self.assertNotEqual(cached.encoded_data, '',
                             "The schema had not been cached in Riak "
                             "b=%s k=%s (=source_id)" %
-                            (cls._config.schemas_bucket_prefix,
+                            (cls._config.schemas_bucket,
                              uuid2hex(source_id)))
 
         remote_schema, cached_schema = core_pb2.Schema(), core_pb2.Schema()
