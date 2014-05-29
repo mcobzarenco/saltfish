@@ -133,12 +133,14 @@ SaltfishServiceImpl::SaltfishServiceImpl(
     store::MetadataSqlStoreTasklet& sql_store,
     boost::asio::io_service& ios,
     uint32_t max_generate_id_count,
-    const string& sources_data_bucket_prefix)
+    const string& sources_data_bucket_prefix,
+    const string& schemas_bucket_prefix)
     :  riak_client_{riak_client},
        sql_store_{sql_store},
        ios_{ios},
        max_generate_id_count_{max_generate_id_count},
-       sources_data_bucket_prefix_{sources_data_bucket_prefix} {
+       sources_data_bucket_prefix_{sources_data_bucket_prefix},
+       schemas_bucket_prefix_{schemas_bucket_prefix} {
 }
 
 void SaltfishServiceImpl::async_call_listeners(
@@ -153,6 +155,8 @@ void SaltfishServiceImpl::async_call_listeners(
 }
 
 /***********                      create_source                     ***********/
+
+
 
 void SaltfishServiceImpl::create_source(
     const CreateSourceRequest& request,
@@ -213,15 +217,26 @@ void SaltfishServiceImpl::create_source(
                                        source.user_id(),
                                        source.schema().SerializeAsString(),
                                        source.name());
-  CreateSourceResponse response;
+
   if (resp) {
-    async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
-    response.set_status(CreateSourceResponse::OK);
-    response.set_source_id(source_id);
+    // Store a copy of the schema (which is immutable anyway) in Riak
+    riak::object object(schemas_bucket_prefix_, source_id);
+    source.schema().SerializeToString(&object.value());
+    riak_client_.store(
+        object, [&reply, source_id, this] (const error_code error) {
+          CreateSourceResponse response;
+          auto status = error ?
+              CreateSourceResponse::NETWORK_ERROR : CreateSourceResponse::OK;
+          response.set_source_id(source_id);
+          response.set_status(status);
+          reply.send(response);
+        });
   } else {
-    response.set_status(CreateSourceResponse::NETWORK_ERROR);
+    CreateSourceResponse response;
+    response.set_status(CreateSourceResponse::INVALID_USER_ID);
+    // response.set_status(CreateSourceResponse::NETWORK_ERROR);
+    reply.send(response);
   }
-  reply.send(response);
 }
 
 /***********                      delete_source                     ***********/
@@ -431,8 +446,8 @@ void SaltfishServiceImpl::put_records(
                         *reinterpret_cast<const int64_t*>(record_id.c_str()),
                         replier, reply, _1,  _2);
 
-    VLOG(0) << "Queueing put_record @ (b=" << bucket
-            << " k=" << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
+    VLOG(0) << "Queueing put_record @ (b=" << bucket << " k="
+            << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
     // riak_client_.fetch(bucket.str(), record_id, handler);
     fetch_closures.emplace_back([this, bucket, record_id, handler] () {
         this->riak_client_.fetch(

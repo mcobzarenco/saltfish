@@ -9,7 +9,7 @@ message MariaDB {
   optional string host = 1      [default = "127.0.0.1"];
   optional uint32 port = 2      [default = 3306];
   optional string db = 3        [default = "mlaas"];
-  optional string user = 4      [default = "root"];
+  optional string user = 4      [default = "super"];
   optional string password = 5  [default = ""];
 }
 
@@ -22,10 +22,11 @@ message Redis {
 message Saltfish {
   optional string bind_str = 1  [default = "tcp://127.0.0.1:5555"];
 
-  optional uint32 max_generate_id_count = 2      [default = 1000];
-  optional string sources_data_bucket_prefix = 3 [default = "/ml/sources/data/"];
+  optional Riak riak = 2;
+  optional MariaDB maria_db = 3;
+  optional Redis redis = 4;
 
-  optional Riak riak = 4;
-  optional MariaDB maria_db = 5;
-  optional Redis redis = 6;
+  optional uint32 max_generate_id_count = 5      [default = 1000];
+  optional string sources_data_bucket_prefix = 6 [default = "/sources/data"];
+  optional string schemas_bucket_prefix = 7      [default = "/sources/schemas"];
 }

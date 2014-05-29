@@ -38,7 +38,8 @@ class SaltfishServiceImpl : public SaltfishService {
       store::MetadataSqlStoreTasklet& sql_store,
       boost::asio::io_service& ios,
       uint32_t max_generate_id_count,
-      const std::string& sources_data_bucket_prefix);
+      const std::string& sources_data_bucket_prefix,
+      const std::string& schemas_bucket_prefix);
 
   SaltfishServiceImpl(const SaltfishServiceImpl&) = delete;
   SaltfishServiceImpl& operator=(const SaltfishServiceImpl&) = delete;
@@ -80,6 +81,7 @@ class SaltfishServiceImpl : public SaltfishService {
 
   uint32_t max_generate_id_count_;
   const std::string sources_data_bucket_prefix_;
+  const std::string schemas_bucket_prefix_;
 
   std::vector<ListenerInfo> listeners_;
 };

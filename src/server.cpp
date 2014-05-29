@@ -47,7 +47,8 @@ void SaltfishServer::run() noexcept {
     saltfish::SaltfishServiceImpl saltfish_serv(
         riak_client_, sql_store_, ios_,
         config_.max_generate_id_count(),
-        config_.sources_data_bucket_prefix());
+        config_.sources_data_bucket_prefix(),
+        config_.schemas_bucket_prefix());
     auto listener = bind(&RedisPublisher::publish, &redis_pub_, _1, _2);
     saltfish_serv.register_listener(RequestType::ALL, listener);
 
