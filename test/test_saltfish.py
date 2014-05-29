@@ -159,11 +159,23 @@ class SaltfishTests(unittest.TestCase):
         ]
 
     def verify_created_source(self, source_id, request):
-        remote = self.__class__._sql.get_source(source_id)
+        cls = self.__class__
+        remote = cls._sql.get_source(source_id)
+        # Also get the schema cached in Riak:
+        cached = cls._riakc \
+                    .bucket(cls._config.schemas_bucket_prefix) \
+                    .get_binary(BinaryString(source_id))
         self.assertIsNotNone(remote)
+        self.assertNotEqual(cached.encoded_data, '',
+                            "The schema had not been cached in Riak "
+                            "b=%s k=%s (=source_id)" %
+                            (cls._config.schemas_bucket_prefix,
+                             uuid2hex(source_id)))
 
-        remote_schema = core_pb2.Schema()
+        remote_schema, cached_schema = core_pb2.Schema(), core_pb2.Schema()
         remote_schema.ParseFromString(remote.source_schema)
+        cached_schema.ParseFromString(cached.encoded_data)
+        self.assertEqual(remote_schema, cached_schema)
         if request.source.source_id != '':
             self.assertEqual(request.source.source_id, remote.source_id)
         self.assertEqual(request.source.user_id, remote.user_id)
