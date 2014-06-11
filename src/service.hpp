@@ -24,11 +24,11 @@ namespace reinferio { namespace saltfish {
 
 class SaltfishService : public SourceManagerService {
  public:
-  using Listener = std::function<void(RequestType req_type,
-                                      const std::string&)>;
+  using Listener =
+      std::function<void(RequestType req_type, const std::string&)>;
 
-  virtual void register_listener(RequestType req_type,
-                                 const Listener& listener) = 0;
+  virtual void register_listener(
+      RequestType req_type, const Listener& listener) = 0;
 };
 
 class SaltfishServiceImpl : public SaltfishService {
@@ -50,8 +50,6 @@ class SaltfishServiceImpl : public SaltfishService {
                              rpcz::reply<DeleteSourceResponse> reply) override;
   virtual void generate_id(const GenerateIdRequest& request,
                            rpcz::reply<GenerateIdResponse> reply) override;
-  virtual void list_sources(const ListSourcesRequest& request,
-                            rpcz::reply<ListSourcesResponse> reply) override;
   virtual void put_records(const PutRecordsRequest& request,
                            rpcz::reply<PutRecordsResponse> reply) override;
 
