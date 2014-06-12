@@ -294,6 +294,28 @@ void SaltfishServiceImpl::generate_id(
   reply.send(response);
 }
 
+/***********                      list_sources                      ***********/
+
+void SaltfishServiceImpl::list_sources(
+    const ListSourcesRequest& request,
+    rpcz::reply<ListSourcesResponse> reply) {
+  using maybe_sources = boost::optional<vector<core::Source>>;
+  const int user_id{request.user_id()};
+  maybe_sources sources{sql_store_.list_sources(user_id)};
+
+  ListSourcesResponse response;
+  if (sources) {
+    response.set_status(ListSourcesResponse::OK);
+    for_each(sources->begin(), sources->end(),
+             [&](const core::Source& src) {
+               *(response.add_sources()) = src;
+             });
+  } else {
+    response.set_status(ListSourcesResponse::NETWORK_ERROR);
+  }
+  reply.send(response);
+}
+
 /***********                       put_records                      ***********/
 
 vector<string> SaltfishServiceImpl::ids_for_put_request(
