@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import argparse
-from base64 import b64decode, b64encode
 import unittest
 import sys
 import time
 import multiprocessing
 import logging
 import struct
-from os.path import join
+from base64 import b64decode, b64encode
+from collections import namedtuple
 from copy import deepcopy
+from os.path import join
 from random import randint
 
 import google.protobuf
@@ -29,7 +30,7 @@ from reinferio.saltfish_pb2 import \
     DeleteSourceRequest, DeleteSourceResponse, \
     GenerateIdRequest,   GenerateIdResponse, \
     PutRecordsRequest,   PutRecordsResponse, \
-    ListSourcesRequest, ListSourcesResponse
+    GetSourcesRequest, GetSourcesResponse
 
 
 PROTO_ROOT = join('..', 'src', 'proto')
@@ -37,7 +38,7 @@ DEFAULT_CONNECT = 'tcp://localhost:5555'
 DEFAULT_RIAK_HOST = 'localhost'
 DEFAULT_RIAK_PORT = 10017
 
-SOURCES_DATA_BUCKET_ROOT = '/ml/sources/data/'
+SOURCE_ID_BYTES = 16
 
 TEST_PASSED = '*** OK ***'
 FAILED_PREFIX = 'TEST FAILED | '
@@ -53,7 +54,8 @@ import config_pb2
 
 
 def make_create_source_req(
-        source_id=None, user_id=None, name=None, features=None):
+        source_id=None, user_id=None, name=None, features=None,
+        private=True, frozen=False):
     features = features or []
     request = CreateSourceRequest()
     if source_id:  request.source.source_id = source_id
@@ -63,6 +65,8 @@ def make_create_source_req(
         new_feat = request.source.schema.features.add()
         if 'name' in f:  new_feat.name = f['name']
         if 'type' in f:  new_feat.feature_type = f['type']
+    request.source.private = private
+    request.source.frozen = frozen
     return request
 
 
@@ -93,10 +97,24 @@ def bytes_to_int64(int_str):
     return struct.unpack("<q", int_str)[0]
 
 
+def valid_source_id(source_id):
+    return isinstance(source_id, basestring) \
+        and len(source_id) == SOURCE_ID_BYTES
+
+
+def parse_schema(schema_str):
+    schema = core_pb2.Schema()
+    schema.ParseFromString(schema_str)
+    return schema
+
+
 class BinaryString(str):
     def encode(self, ignored):
         return self
 
+ListSourcesRecord = namedtuple('ListSourcesRecord', [
+    'source_id', 'user_id', 'source_schema', 'name', 'private',
+    'frozen', 'created', 'username', 'email'])
 
 class SaltfishTests(unittest.TestCase):
     _config = config_pb2.Saltfish()
@@ -128,8 +146,10 @@ class SaltfishTests(unittest.TestCase):
         cur.execute('DELETE FROM users')
         cls._sql.check_in_connection(conn)
 
-        user_id1 = cls._sql.create_user('marius@test.io', 'abcd', True)
-        user_id2 = cls._sql.create_user('reinfer@test.io', 'abcde', False)
+        user_id1 = cls._sql.create_user(
+            'marius', 'marius@test.io', 'abcd', True)
+        user_id2 = cls._sql.create_user(
+            'reinfer', 'reinfer@test.io', 'abcde', False)
         cls._user_id1 = user_id1
         cls._user_id2 = user_id2
 
@@ -138,6 +158,44 @@ class SaltfishTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         pass
+
+    @classmethod
+    def get_sources(cls, source_id=None, user_id=None, username=None):
+        SELECT_LIST_SOURCES = """
+        SELECT source_id, user_id, source_schema, name, private, frozen,
+         created, username, email FROM list_sources WHERE """
+        args = [source_id, user_id, username]
+        assert sum(map(lambda x: x is not None, args)) == 1
+        print(args)
+
+        conn = cls._sql.check_out_connection()
+        assert conn is not None
+        cur = conn.cursor()
+        if source_id is not None:
+            cur.execute(SELECT_LIST_SOURCES + 'source_id=%s', (source_id,))
+        elif user_id is not None:
+            cur.execute(SELECT_LIST_SOURCES + 'user_id=%s', (user_id,))
+        elif username is not None:
+            cur.execute(SELECT_LIST_SOURCES + 'username=%s', (username,))
+        else:
+            assert False
+        sources = cur.fetchall()
+        cls._sql.check_in_connection(conn)
+
+        if len(sources) == 0:
+            if source_id is not None:
+                return None
+            else:
+                if cls._sql.get_user(
+                        user_id=user_id, username=username) is None:
+                    return None
+        print(sources)
+        return [ListSourcesRecord(
+            source_id=source[0], user_id=source[1],
+            source_schema=parse_schema(source[2]),
+            name=source[3], private=source[4],
+            frozen=source[5], created=source[6],
+            username=source[7], email=source[8]) for source in sources]
 
     def setUp(self):
         self._features = [
@@ -159,43 +217,51 @@ class SaltfishTests(unittest.TestCase):
         ]
 
     def verify_created_source(self, source_id, request):
+        self.assertTrue(valid_source_id(source_id))
+
         cls = self.__class__
-        remote = cls._sql.get_source(source_id)
+        remote = cls.get_sources(source_id=source_id)
+        self.assertEqual(1, len(remote))
+        remote = remote[0]
+
         # Also get the schema cached in Riak:
         cached = cls._riakc \
                     .bucket(cls._config.schemas_bucket) \
-                    .get_binary(BinaryString(source_id))
-        self.assertIsNotNone(remote)
-        self.assertNotEqual(cached.encoded_data, '',
-                            "The schema had not been cached in Riak "
-                            "b=%s k=%s (=source_id)" %
-                            (cls._config.schemas_bucket,
-                             uuid2hex(source_id)))
+                    .get(BinaryString(source_id))
+        self.assertNotEqual(
+            cached.encoded_data, '',
+            "The schema had not been cached in Riak b=%s k=%s (=source_id)" %
+            (cls._config.schemas_bucket, uuid2hex(source_id)))
 
-        remote_schema, cached_schema = core_pb2.Schema(), core_pb2.Schema()
-        remote_schema.ParseFromString(remote.source_schema)
+        cached_schema = core_pb2.Schema()
         cached_schema.ParseFromString(cached.encoded_data)
-        self.assertEqual(remote_schema, cached_schema)
-        if request.source.source_id != '':
+
+        self.assertEqual(remote.source_schema, cached_schema)
+        if valid_source_id(request.source.source_id):
             self.assertEqual(request.source.source_id, remote.source_id)
         self.assertEqual(request.source.user_id, remote.user_id)
         self.assertEqual(request.source.name, remote.name)
         self.assertEqual(request.source.schema.features,
-                         remote_schema.features)
+                         remote.source_schema.features)
+        self.assertEqual(request.source.private, remote.private)
+        self.assertEqual(request.source.frozen, remote.frozen)
 
     def try_create_source(self, request):
-        response = self._service.create_source(request,
-                                               deadline_ms=DEFAULT_DEADLINE)
+        response = self._service.create_source(
+            request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(CreateSourceResponse.OK, response.status)
+        source_id = response.source_id
+
+        self.verify_created_source(source_id, request)
         if request.source.source_id:
             self.assertEqual(request.source.source_id, response.source_id)
-        source_id = response.source_id
-        self.verify_created_source(source_id, request)
+        else:
+            request.source.source_id = source_id
 
         log.info('Sending a 2nd identical request to check '
                  'idempotency (source_id=%s)' % uuid2hex(source_id))
-        response2 = self._service.create_source(request,
-                                                deadline_ms=DEFAULT_DEADLINE)
+        response2 = self._service.create_source(
+            request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(CreateSourceResponse.OK, response2.status)
         self.verify_created_source(source_id, request)
 
@@ -205,8 +271,8 @@ class SaltfishTests(unittest.TestCase):
         features[1]['type'] = core_pb2.Feature.CATEGORICAL
         request3 = make_create_source_req(
             source_id, request.source.user_id, request.source.name, features)
-        response3 = self._service.create_source(request3,
-                                                deadline_ms=DEFAULT_DEADLINE)
+        response3 = self._service.create_source(
+            request3, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(CreateSourceResponse.SOURCE_ID_ALREADY_EXISTS,
                          response3.status)
         log.info('Got error message: "%s"' % response3.msg)
@@ -215,8 +281,8 @@ class SaltfishTests(unittest.TestCase):
     def try_delete_source(self, source_id):
         request = DeleteSourceRequest()
         request.source_id = source_id
-        response = self._service.delete_source(request,
-                                               deadline_ms=DEFAULT_DEADLINE)
+        response = self._service.delete_source(
+            request, deadline_ms=DEFAULT_DEADLINE)
         return response
 
     ### Test functions ###
@@ -232,7 +298,7 @@ class SaltfishTests(unittest.TestCase):
 
     def test_create_source_with_no_source_id(self):
         user_id = self.__class__._user_id2
-        source_name = u"Some Other Source 客家話 -- £$"
+        source_name = u"Some Other Source 客家 話 -- £$"
         request = make_create_source_req(
             user_id=user_id, name=source_name, features=self._features)
         log.info('Creating a new source without setting the id..')
@@ -248,7 +314,7 @@ class SaltfishTests(unittest.TestCase):
             request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(CreateSourceResponse.INVALID_USER_ID, response.status)
         log.info('Got error message: "%s"' % response.msg)
-        self.assertIsNone(self.__class__._sql.get_source(response.source_id))
+        self.assertIsNone(self.__class__.get_sources(response.source_id))
 
     def test_create_source_duplicate_feature_name(self):
         user_id = self.__class__._user_id2
@@ -263,7 +329,7 @@ class SaltfishTests(unittest.TestCase):
         self.assertEqual(CreateSourceResponse.DUPLICATE_FEATURE_NAME,
                          response.status)
         log.info('Got error message: "%s"' % response.msg)
-        self.assertIsNone(self.__class__._sql.get_source(source_id))
+        self.assertIsNone(self.__class__.get_sources(source_id))
 
     def test_create_source_with_invalid_feature_type(self):
         user_id = self.__class__._user_id1
@@ -281,6 +347,29 @@ class SaltfishTests(unittest.TestCase):
         self.assertEqual(CreateSourceResponse.INVALID_FEATURE_TYPE,
                          response.status)
 
+    def test_create_source_two_sources_same_name(self):
+        user_id = self.__class__._user_id1
+        source_name = u"iris-dataset"
+        source_id1 = uuid.uuid4().get_bytes()
+        source_id2 = uuid.uuid4().get_bytes()
+
+        # Only the source ids differ:
+        request1 = make_create_source_req(
+            source_id=source_id1, user_id=user_id,
+            name=source_name, features=self._features)
+        request2 = make_create_source_req(
+            source_id=source_id2, user_id=user_id,
+            name=source_name, features=self._features)
+
+        log.info('Trying to create 2 sources with the same name for the same '
+                 ' user. Error expected')
+        self.try_create_source(request1)
+        response = self._service.create_source(
+            request2, deadline_ms=DEFAULT_DEADLINE)
+        self.assertEqual(
+            CreateSourceResponse.DUPLICATE_SOURCE_NAME, response.status)
+        log.info('Got error message: "%s"' % response.msg)
+
     def test_delete_source(self):
         user_id = self.__class__._user_id1
         create_request = make_create_source_req(
@@ -291,7 +380,7 @@ class SaltfishTests(unittest.TestCase):
             create_request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(CreateSourceResponse.OK, create_response.status)
         source_id = create_response.source_id
-        self.assertIsNotNone(self.__class__._sql.get_source(source_id))
+        self.assertIsNotNone(self.__class__.get_sources(source_id))
 
         log.info('Deleting the just created source with id=%s'
                  % uuid2hex(source_id))
@@ -300,7 +389,7 @@ class SaltfishTests(unittest.TestCase):
             delete_request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(DeleteSourceResponse.OK, delete_response.status)
         self.assertEqual(True, delete_response.updated)
-        self.assertIsNone(self.__class__._sql.get_source(source_id))
+        self.assertIsNone(self.__class__.get_sources(source_id))
 
         log.info('Making a 2nd identical delete_source call '
                  'to check idempotency (source_id=%s)'  % uuid2hex(source_id))
@@ -308,7 +397,7 @@ class SaltfishTests(unittest.TestCase):
             delete_request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(DeleteSourceResponse.OK, delete_response.status)
         self.assertEqual(False, delete_response.updated)
-        self.assertIsNone(self.__class__._sql.get_source(source_id))
+        self.assertIsNone(self.__class__.get_sources(source_id))
 
     def test_delete_source_invalid_ids(self):
         log.info('Sending delete_request with invalid ids. Errors expected')
@@ -366,7 +455,8 @@ class SaltfishTests(unittest.TestCase):
                                              deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(PutRecordsResponse.OK, put_resp.status)
         self.assertEqual(len(self._records), len(put_resp.record_ids))
-        bucket = SOURCES_DATA_BUCKET_ROOT + str(uuid2hex(source_id))
+        bucket = self.__class__._config.sources_data_bucket_prefix + \
+                 str(uuid2hex(source_id))
         print(put_resp.record_ids)
         for i, record_id in enumerate(put_resp.record_ids):
             self.assertEqual(8, len(record_id))  # record_ids are int64_t
@@ -388,14 +478,12 @@ class SaltfishTests(unittest.TestCase):
         self.assertEqual(0, len(response.record_ids))
         log.info('Got error message: "%s"' % response.msg)
 
-    def test_list_sources(self):
-        source_names = ['src1', 'src2', 'src3'];
+    def _make_some_sources(self, user_id, source_names):
         create_reqs = {}
-        user_id = self.__class__._sql.create_user(
-            'list@test.io', 'qwerty', False)
-        for name in source_names:
+        for i, name in enumerate(source_names):
             request = make_create_source_req(
-                name=name, user_id=user_id, features=self._features)
+                name=name, user_id=user_id, features=self._features,
+                private=(i % 2 == 0), frozen=(i % 3 == 0))
             log.info('Creating source "%s" for user_id=%d'
                      % (name, user_id))
             response = self._service.create_source(
@@ -403,16 +491,25 @@ class SaltfishTests(unittest.TestCase):
             self.assertEqual(CreateSourceResponse.OK, response.status)
             self.verify_created_source(response.source_id, request)
             create_reqs[response.source_id] = request
+        return create_reqs
 
-        request = ListSourcesRequest()
+    def test_get_sources(self):
+        username, email = 'list', 'list@test.io'
+        user_id = self.__class__._sql.create_user(
+            username, email, 'qwerty', False)
+        source_names = ['src1', 'src2', 'src3'];
+        create_reqs = self._make_some_sources(user_id, source_names)
+
+        request = GetSourcesRequest()
         request.user_id = user_id
-        response = self._service.list_sources(
+        response = self._service.get_sources(
             request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(ListSourcesResponse.OK, response.status)
-        self.assertEqual(len(source_names), len(response.sources))
+        self.assertEqual(GetSourcesResponse.OK, response.status)
+        self.assertEqual(len(source_names), len(response.sources_info))
 
         source_ids = set(create_reqs.keys())
-        for source in response.sources:
+        for source_info in response.sources_info:
+            source = source_info.source
             self.assertIn(
                 source.source_id, source_ids,
                 "A source with id=%s was returned by list_sources"
@@ -422,10 +519,19 @@ class SaltfishTests(unittest.TestCase):
                    map(b64encode, source_ids)))
             source_id = source.source_id
             request = create_reqs[source_id]
-            self.assertEqual(request.source.schema, source.schema)
-            self.assertEqual(request.source.name, source.name)
-            self.assertEqual(user_id, source.user_id)
+            self.verify_created_source(source_id, request)
+            self.assertEqual(username, source_info.username)
+            self.assertEqual(email, source_info.email)
             source_ids.remove(source.source_id)
+
+            # Check that the same result is obtained using the source's id:
+            req_by_id = GetSourcesRequest()
+            req_by_id.source_id = source_id
+            resp_by_id = self._service.get_sources(
+                req_by_id, deadline_ms=DEFAULT_DEADLINE)
+            self.assertEqual(GetSourcesResponse.OK, resp_by_id.status)
+            self.assertEqual(1, len(resp_by_id.sources_info))
+            self.assertEqual(source_info, resp_by_id.sources_info[0])
 
     @unittest.skip("")
     def test_rabbitmq_publisher(self):

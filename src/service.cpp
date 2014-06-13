@@ -1,6 +1,7 @@
 #define BOOST_BIND_NO_PLACEHOLDERS
 #include "service.hpp"
 #include "service_utils.hpp"
+#include "sql_errors.hpp"
 
 #include <riakpp/connection.hpp>
 #include <glog/logging.h>
@@ -20,6 +21,9 @@ namespace reinferio { namespace saltfish {
 
 using namespace std;
 using namespace std::placeholders;
+
+using store::sql_error_category;
+using store::SqlErr;
 
 namespace { //  Some utility functions
 
@@ -67,6 +71,8 @@ inline void reply_with_status(
           {CreateSourceResponse::OK, ""},
           {CreateSourceResponse::DUPLICATE_FEATURE_NAME,
                 "The provided schema contains duplicate feature names."},
+          {CreateSourceResponse::DUPLICATE_SOURCE_NAME,
+                sql_error_category().message(SqlErr::DUPLICATE_SOURCE_NAME)},
           {CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS,
                 "A source with the same id, but different schema already exists."},
           {CreateSourceResponse::INVALID_SOURCE_ID,
@@ -113,7 +119,8 @@ inline void reply_with_status(
           {PutRecordsResponse::UNKNOWN_ERROR, UNKNOWN_ERROR_MESSAGE},
           {PutRecordsResponse::OK, ""},
           {PutRecordsResponse::INVALID_SCHEMA, "Invalid schema"},
-          {PutRecordsResponse::INVALID_SOURCE_ID, "Invalid source id."},
+          {PutRecordsResponse::INVALID_SOURCE_ID,
+                sql_error_category().message(SqlErr::INVALID_SOURCE_ID)},
           {PutRecordsResponse::NO_RECORDS_IN_REQUEST,
                 "No records in the request."},
           {PutRecordsResponse::INVALID_RECORD, "Invalid record"},
@@ -124,6 +131,29 @@ inline void reply_with_status(
   else
     send_reply(reply, status,  error_messages[status]);
 }
+
+inline void reply_with_status(
+    GetSourcesResponse::Status status,
+    rpcz::reply<GetSourcesResponse>& reply,
+    const char* message = nullptr) {
+  static const vector<const char *> error_messages =
+      make_error_messages<GetSourcesResponse>({
+          {GetSourcesResponse::UNKNOWN_ERROR, UNKNOWN_ERROR_MESSAGE},
+          {GetSourcesResponse::OK, ""},
+          {GetSourcesResponse::INVALID_SOURCE_ID,
+                sql_error_category().message(SqlErr::INVALID_SOURCE_ID)},
+          {GetSourcesResponse::INVALID_USER_ID,
+                sql_error_category().message(SqlErr::INVALID_USER_ID)},
+          {GetSourcesResponse::INVALID_USERNAME,
+                sql_error_category().message(SqlErr::INVALID_USERNAME)},
+          {GetSourcesResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
+        });
+  if(message != nullptr)
+    send_reply(reply, status, message);
+  else
+    send_reply(reply, status,  error_messages[status]);
+}
+
 
 } //  anonymous namespace
 
@@ -157,7 +187,6 @@ void SaltfishServiceImpl::async_call_listeners(
 /***********                      create_source                     ***********/
 
 
-
 void SaltfishServiceImpl::create_source(
     const CreateSourceRequest& request,
     rpcz::reply<CreateSourceResponse> reply) {
@@ -167,7 +196,6 @@ void SaltfishServiceImpl::create_source(
     return;
   } else if (schema_has_invalid_features(source.schema())) {
     reply_with_status(CreateSourceResponse::INVALID_FEATURE_TYPE, reply);
-    LOG(INFO) << "INVALID_FEATURE_TYPE";
     return;
   }
   string source_id;
@@ -188,13 +216,11 @@ void SaltfishServiceImpl::create_source(
             << ", schema='" << source.schema().ShortDebugString() << "')";
 
   if (!new_source_id) {
-    auto remote_schema = sql_store_.fetch_schema(source_id);
-    if(!remote_schema) {
-      reply_with_status(CreateSourceResponse::NETWORK_ERROR, reply);
-      return;
-    }
-    if (remote_schema->size() > 0) {
-      if (remote_schema->front() ==
+    core::Schema remote_schema;
+    error_condition sql_response = sql_store_.fetch_schema(remote_schema, source_id);
+
+    if (sql_response == SqlErr::OK) {
+      if (remote_schema.SerializeAsString() ==
           source.schema().SerializeAsString()) {
         // Trying to create a source that already exists with identical schema
         // Nothing to do - send OK such that the call is idempotent
@@ -204,21 +230,24 @@ void SaltfishServiceImpl::create_source(
         reply.send(response);
         return;
       } else {
-        LOG(INFO) << "A source with the same id, but different schema "
-                  << "already exists (source_id="
-                  << string_to_hex(source_id) << ")";
+        LOG(WARNING) << "A source with the same id, but different schema "
+                     << "already exists (source_id="
+                     << string_to_hex(source_id) << ")";
         reply_with_status(
             CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
         return;
       }
+    } else if (sql_response != SqlErr::INVALID_SOURCE_ID) {
+      // It is OK if the source_id does not exist
+      reply_with_status(CreateSourceResponse::NETWORK_ERROR, reply);
+      return;
     }
   }
-  auto resp = sql_store_.create_source(source_id,
-                                       source.user_id(),
-                                       source.schema().SerializeAsString(),
-                                       source.name());
+  auto sql_response = sql_store_.create_source(
+      source_id, source.user_id(), source.schema().SerializeAsString(),
+      source.name(), source.private_(), source.frozen());
 
-  if (resp) {
+  if (sql_response == SqlErr::OK) {
     // Store a copy of the schema (which is immutable anyway) in Riak
     riak::object object(schemas_bucket_, source_id);
     source.schema().SerializeToString(&object.value());
@@ -233,8 +262,16 @@ void SaltfishServiceImpl::create_source(
         });
   } else {
     CreateSourceResponse response;
-    response.set_status(CreateSourceResponse::INVALID_USER_ID);
-    // response.set_status(CreateSourceResponse::NETWORK_ERROR);
+    switch (static_cast<SqlErr>(sql_response.value())) {
+      case SqlErr::INVALID_USER_ID:
+        response.set_status(CreateSourceResponse::INVALID_USER_ID);
+        break;
+      case SqlErr::DUPLICATE_SOURCE_NAME:
+        response.set_status(CreateSourceResponse::DUPLICATE_SOURCE_NAME);
+        break;
+      default:
+        response.set_status(CreateSourceResponse::NETWORK_ERROR);
+    }
     reply.send(response);
   }
 }
@@ -246,29 +283,31 @@ void SaltfishServiceImpl::delete_source(
     const DeleteSourceRequest& request,
     rpcz::reply<DeleteSourceResponse> reply) {
   const string& source_id = request.source_id();
-  if (source_id.size() == boost::uuids::uuid::static_size()) {
-    VLOG(0) << "delete_source(source_id=" << string_to_hex(source_id) << ")";
-    try {
-      auto rows_updated = sql_store_.delete_source(source_id);
-      CHECK(rows_updated == 0 || rows_updated == 1)
-          << "source_id is a primary key, a max of 1 row can be affected";
-      if (rows_updated == 0) {
-        reply_with_status(DeleteSourceResponse::OK, reply);
-      } else {
-        async_call_listeners(RequestType::DELETE_SOURCE,
-                             request.SerializeAsString());
-        DeleteSourceResponse response;
-        response.set_status(DeleteSourceResponse::OK);
-        response.set_updated(true);
-        reply.send(response);
-      }
-    } catch (const ::sql::SQLException& e) {
-      LOG(ERROR) << "delete_source() query error: " << e.what();
-      reply_with_status(DeleteSourceResponse::UNKNOWN_ERROR, reply);
-    }
-  } else {
+  if (source_id.size() != SOURCE_ID_WIDTH) {
     LOG(INFO) << "delete_source() with invalid source_id";
     reply_with_status(DeleteSourceResponse::INVALID_SOURCE_ID, reply);
+    return;
+  }
+  VLOG(0) << "delete_source(source_id=" << string_to_hex(source_id) << ")";
+  int rows_updated;
+  error_condition sql_response =
+      sql_store_.delete_source(rows_updated, source_id);
+  if (sql_response == SqlErr::OK) {
+    CHECK(rows_updated == 0 || rows_updated == 1)
+        << "source_id is a primary key, a max of 1 row can be affected";
+    if (rows_updated == 0) {
+      reply_with_status(DeleteSourceResponse::OK, reply);
+    } else {
+      async_call_listeners(
+          RequestType::DELETE_SOURCE, request.SerializeAsString());
+      DeleteSourceResponse response;
+      response.set_status(DeleteSourceResponse::OK);
+      response.set_updated(true);
+      reply.send(response);
+      return;
+    }
+  } else {
+    reply_with_status(DeleteSourceResponse::NETWORK_ERROR, reply);
   }
 }
 
@@ -294,26 +333,40 @@ void SaltfishServiceImpl::generate_id(
   reply.send(response);
 }
 
-/***********                      list_sources                      ***********/
+/***********                      get_sources                      ***********/
 
-void SaltfishServiceImpl::list_sources(
-    const ListSourcesRequest& request,
-    rpcz::reply<ListSourcesResponse> reply) {
-  using maybe_sources = boost::optional<vector<core::Source>>;
-  const int user_id{request.user_id()};
-  maybe_sources sources{sql_store_.list_sources(user_id)};
-
-  ListSourcesResponse response;
-  if (sources) {
-    response.set_status(ListSourcesResponse::OK);
-    for_each(sources->begin(), sources->end(),
-             [&](const core::Source& src) {
-               *(response.add_sources()) = src;
-             });
-  } else {
-    response.set_status(ListSourcesResponse::NETWORK_ERROR);
+void SaltfishServiceImpl::get_sources(
+    const GetSourcesRequest& request,
+    rpcz::reply<GetSourcesResponse> reply) {
+  error_condition sql_response;
+  if(request.has_source_id()) {
+    GetSourcesResponse response;
+    auto& source_info = *response.add_sources_info();
+    sql_response = sql_store_.get_source_by_id(
+        source_info, request.source_id());
+    if (sql_response == SqlErr::OK) {
+      response.set_status(GetSourcesResponse::OK);
+      reply.send(response);
+      return;
+    } else if(sql_response == SqlErr::INVALID_SOURCE_ID) {
+      reply_with_status(GetSourcesResponse::INVALID_SOURCE_ID, reply);
+      return;
+    }
+  } else if (request.has_user_id()) {
+    vector<SourceInfo> sources_info;
+    sql_response = sql_store_.get_sources_by_user(
+        sources_info, request.user_id());
+    if (sql_response == SqlErr::OK) {
+      GetSourcesResponse response;
+      for (auto& source_info : sources_info) {
+        *response.add_sources_info() = source_info;
+      }
+      response.set_status(GetSourcesResponse::OK);
+      reply.send(response);
+      return;
+    }
   }
-  reply.send(response);
+  reply_with_status(GetSourcesResponse::NETWORK_ERROR, reply);
 }
 
 /***********                       put_records                      ***********/
@@ -391,12 +444,9 @@ void SaltfishServiceImpl::put_records(
     reply_with_status(PutRecordsResponse::NO_RECORDS_IN_REQUEST, reply);
     return;
   }
-  auto schema_vec = sql_store_.fetch_schema(source_id);
-  if (!schema_vec) {
-    reply_with_status(PutRecordsResponse::UNKNOWN_ERROR, reply);
-    return;
-  }
-  if (schema_vec->size() == 0) {
+  core::Schema schema;
+  error_condition sql_response = sql_store_.fetch_schema(schema, source_id);
+  if (sql_response == SqlErr::INVALID_SOURCE_ID) {
     VLOG(0) << "Received put_records request for non-existent source; id="
             << string_to_hex(source_id);
     stringstream msg;
@@ -405,13 +455,8 @@ void SaltfishServiceImpl::put_records(
     reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
                       msg.str().c_str());
     return;
-  }
-  core::Schema schema;
-  if (!schema.ParseFromString(schema_vec->front())) {
-    LOG(ERROR) << "Could not parse source schema for request: "
-               << request.DebugString();
-    reply_with_status(PutRecordsResponse::INVALID_SCHEMA, reply,
-                      "The source does not a valid schema");
+  } else if (sql_response != SqlErr::OK) {
+    reply_with_status(PutRecordsResponse::NETWORK_ERROR, reply);
     return;
   }
   for(uint32_t ix = 0; ix < n_records; ++ix) {

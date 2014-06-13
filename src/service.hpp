@@ -50,8 +50,8 @@ class SaltfishServiceImpl : public SaltfishService {
                              rpcz::reply<DeleteSourceResponse> reply) override;
   virtual void generate_id(const GenerateIdRequest& request,
                            rpcz::reply<GenerateIdResponse> reply) override;
-  virtual void list_sources(const ListSourcesRequest& request,
-                            rpcz::reply<ListSourcesResponse> reply) override;
+  virtual void get_sources(const GetSourcesRequest& request,
+                            rpcz::reply<GetSourcesResponse> reply) override;
   virtual void put_records(const PutRecordsRequest& request,
                            rpcz::reply<PutRecordsResponse> reply) override;
 

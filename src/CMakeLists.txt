@@ -30,6 +30,8 @@ add_library(
   sql_pool
     sql.hpp
     sql.cpp
+    sql_errors.hpp
+    sql_errors.cpp
 )
 target_link_libraries(
   sql_pool
