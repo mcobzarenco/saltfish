@@ -41,6 +41,8 @@ class MetadataStore {
       SourceInfo& source_info, const std::string& source_id) = 0;
   virtual std::error_condition get_sources_by_user(
       std::vector<SourceInfo>& sources_info, const int user_id) = 0;
+  virtual std::error_condition get_sources_by_username(
+      std::vector<SourceInfo>& sources_info, const std::string& username) = 0;
 };
 
 class MetadataSqlStore : MetadataStore {
@@ -64,10 +66,16 @@ class MetadataSqlStore : MetadataStore {
       SourceInfo& source_info, const std::string& source_id) override;
   virtual std::error_condition get_sources_by_user(
       std::vector<SourceInfo>& sources_info, const int user_id) override;
+  virtual std::error_condition get_sources_by_username(
+      std::vector<SourceInfo>& sources_info, const std::string& username) override;
 
   bool ensure_connected();
   void close();
  private:
+  std::error_condition get_sources_by(
+      std::vector<SourceInfo>& sources_info, const int user_id=0,
+      const std::string& username="");
+
   const std::string host_;
   const uint16_t port_;
   const std::string user_;
@@ -98,6 +106,8 @@ class MetadataSqlStoreTasklet {
       SourceInfo& source_info, const std::string& source_id);
   std::error_condition get_sources_by_user(
       std::vector<SourceInfo>& sources_info, const int user_id);
+  std::error_condition get_sources_by_username(
+      std::vector<SourceInfo>& sources_info, const std::string& username);
 
   using fetch_schema_type = std::function<
     std::error_condition(core::Schema&, const std::string&)>;
@@ -110,6 +120,8 @@ class MetadataSqlStoreTasklet {
     std::error_condition(SourceInfo&, const std::string&)>;
   using get_sources_by_user_type = std::function<std::error_condition(
       std::vector<SourceInfo>& sources_info, const int user_id)>;
+  using get_sources_by_username_type = std::function<std::error_condition(
+      std::vector<SourceInfo>& sources_info, const std::string& username)>;
 
  private:
   template<typename T>
@@ -123,6 +135,7 @@ class MetadataSqlStoreTasklet {
 
   ts_ptr<lib::Connection<get_source_by_id_type>> get_source_by_id_;
   ts_ptr<lib::Connection<get_sources_by_user_type>> get_sources_by_user_;
+  ts_ptr<lib::Connection<get_sources_by_username_type>> get_sources_by_username_;
 };
 
 }}}  // namespace reinferio::saltfish::store

@@ -493,19 +493,25 @@ class SaltfishTests(unittest.TestCase):
             create_reqs[response.source_id] = request
         return create_reqs
 
-    def test_get_sources(self):
-        username, email = 'list', 'list@test.io'
-        user_id = self.__class__._sql.create_user(
-            username, email, 'qwerty', False)
-        source_names = ['src1', 'src2', 'src3'];
-        create_reqs = self._make_some_sources(user_id, source_names)
-
+    def test_get_sources_invalid_request(self):
         request = GetSourcesRequest()
-        request.user_id = user_id
+        response = self._service.get_sources(
+            request, deadline_ms=DEFAULT_DEADLINE)
+        self.assertEqual(GetSourcesResponse.INVALID_REQUEST, response.status)
+
+        request2 = GetSourcesRequest()
+        request2.user_id = 1001
+        request2.username = "test"
+        response2 = self._service.get_sources(
+            request2, deadline_ms=DEFAULT_DEADLINE)
+        self.assertEqual(GetSourcesResponse.INVALID_REQUEST, response2.status)
+
+    def assert_get_sources_with_request(
+            self, username, email, create_reqs, request):
         response = self._service.get_sources(
             request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(GetSourcesResponse.OK, response.status)
-        self.assertEqual(len(source_names), len(response.sources_info))
+        self.assertEqual(len(create_reqs), len(response.sources_info))
 
         source_ids = set(create_reqs.keys())
         for source_info in response.sources_info:
@@ -513,10 +519,9 @@ class SaltfishTests(unittest.TestCase):
             self.assertIn(
                 source.source_id, source_ids,
                 "A source with id=%s was returned by list_sources"
-                " for user_id=%d although it was not created in the test;"
+                " for although it was not created in the test;"
                 " remaining expected source_ids=%s"
-                % (b64encode(source.source_id), user_id,
-                   map(b64encode, source_ids)))
+                % (b64encode(source.source_id), map(b64encode, source_ids)))
             source_id = source.source_id
             request = create_reqs[source_id]
             self.verify_created_source(source_id, request)
@@ -532,6 +537,23 @@ class SaltfishTests(unittest.TestCase):
             self.assertEqual(GetSourcesResponse.OK, resp_by_id.status)
             self.assertEqual(1, len(resp_by_id.sources_info))
             self.assertEqual(source_info, resp_by_id.sources_info[0])
+
+    def test_get_sources(self):
+        username, email = 'list', 'list@test.io'
+        user_id = self.__class__._sql.create_user(
+            username, email, 'qwerty', False)
+        source_names = ['src1', 'src2', 'src3'];
+        create_reqs = self._make_some_sources(user_id, source_names)
+
+        request = GetSourcesRequest()
+        request.user_id = user_id
+        self.assert_get_sources_with_request(
+            username, email, create_reqs, request)
+
+        request2 = GetSourcesRequest()
+        request2.username = username
+        self.assert_get_sources_with_request(
+            username, email, create_reqs, request2)
 
     @unittest.skip("")
     def test_rabbitmq_publisher(self):

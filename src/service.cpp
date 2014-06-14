@@ -146,6 +146,8 @@ inline void reply_with_status(
                 sql_error_category().message(SqlErr::INVALID_USER_ID)},
           {GetSourcesResponse::INVALID_USERNAME,
                 sql_error_category().message(SqlErr::INVALID_USERNAME)},
+          {GetSourcesResponse::INVALID_REQUEST,
+                "Exactly one field should be set in the request."},
           {GetSourcesResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
         });
   if(message != nullptr)
@@ -338,11 +340,15 @@ void SaltfishServiceImpl::generate_id(
 void SaltfishServiceImpl::get_sources(
     const GetSourcesRequest& request,
     rpcz::reply<GetSourcesResponse> reply) {
-  error_condition sql_response;
-  if(request.has_source_id()) {
+  if (request.has_source_id() + request.has_user_id() +
+      request.has_username() != 1) {
+    reply_with_status(GetSourcesResponse::INVALID_REQUEST, reply);
+    return;
+  }
+  if (request.has_source_id()) {
     GetSourcesResponse response;
     auto& source_info = *response.add_sources_info();
-    sql_response = sql_store_.get_source_by_id(
+    error_condition sql_response = sql_store_.get_source_by_id(
         source_info, request.source_id());
     if (sql_response == SqlErr::OK) {
       response.set_status(GetSourcesResponse::OK);
@@ -352,10 +358,16 @@ void SaltfishServiceImpl::get_sources(
       reply_with_status(GetSourcesResponse::INVALID_SOURCE_ID, reply);
       return;
     }
-  } else if (request.has_user_id()) {
+  } else {
     vector<SourceInfo> sources_info;
-    sql_response = sql_store_.get_sources_by_user(
-        sources_info, request.user_id());
+    error_condition sql_response;
+    if (request.has_user_id()) {
+      sql_response = sql_store_.get_sources_by_user(
+          sources_info, request.user_id());
+    } else {
+      sql_response = sql_store_.get_sources_by_username(
+          sources_info, request.username());
+    }
     if (sql_response == SqlErr::OK) {
       GetSourcesResponse response;
       for (auto& source_info : sources_info) {

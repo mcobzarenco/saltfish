@@ -153,43 +153,6 @@ std::error_condition MetadataSqlStore::delete_source(
   return make_error_condition(SqlErr::SQL_CONNECTION_ERROR);
 }
 
-/*
-boost::optional<std::vector<core::Source>>
-MetadataSqlStore::list_sources(const int user_id) {
-  static constexpr char GET_SOURCE_TEMPLATE[] =
-      "SELECT source_id, user_id, source_schema, name FROM sources "
-      "WHERE user_id = ?";
-  if (!ensure_connected()) {
-    return boost::optional<std::vector<core::Source>>{};
-  }
-  try {
-    std::unique_ptr<sql::PreparedStatement> get_query{
-      conn_->prepareStatement(GET_SOURCE_TEMPLATE)};
-    get_query->setInt(1, user_id);
-    std::unique_ptr<sql::ResultSet> res{get_query->executeQuery()};
-    std::vector<core::Source> sources;
-
-    LOG(INFO) << res->rowsCount() << " sources for used_id=" << user_id;
-    while(res->next()) {
-      core::Source src;
-      if (!src.mutable_schema()->ParseFromString(
-              res->getString("source_schema"))) {
-        return boost::optional<std::vector<core::Source>>{};
-      }
-      src.set_source_id(res->getString("source_id"));
-      src.set_user_id(res->getInt("user_id"));
-      src.set_name(res->getString("name"));
-      sources.push_back(src);
-    }
-    return boost::optional<std::vector<core::Source>>{sources};
-  } catch (const sql::SQLException& e) {
-    LOG(WARNING) << "MetadataSqlStore::list_sources() - sql exception - "
-                 << e.what();
-  }
-  return boost::optional<std::vector<core::Source>>{};
-}
-*/
-
 namespace {
 void list_sources_row_to_proto(
     SourceInfo& source_info, sql::ResultSet& row) {
@@ -239,21 +202,36 @@ std::error_condition MetadataSqlStore::get_source_by_id(
   return make_error_condition(SqlErr::SQL_CONNECTION_ERROR);
 }
 
-std::error_condition MetadataSqlStore::get_sources_by_user(
-    vector<SourceInfo>& sources_info, const int user_id) {
-  static constexpr char SOURCE_BY_USER_TEMPLATE[] =
+std::error_condition MetadataSqlStore::get_sources_by(
+    std::vector<SourceInfo>& sources_info, const int user_id,
+    const std::string& username) {
+  static constexpr char SOURCE_BY_TEMPLATE[] =
       "SELECT source_id, user_id, source_schema, name, "
       "private, frozen, created, username, email "
-      "FROM list_sources WHERE user_id = ?";
+      "FROM list_sources ";
+  static constexpr char BY_USER_ID[] = "WHERE user_id = ?";
+  static constexpr char BY_USERNAME[] = "WHERE username = ?";
+
+  CHECK((user_id == 0) != (username == ""))
+      << "Specify either user_id or username";
   if (!ensure_connected()) {
     return make_error_condition(SqlErr::SQL_CONNECTION_ERROR);
   }
   try {
-    std::unique_ptr<sql::PreparedStatement> get_query{
-      conn_->prepareStatement(SOURCE_BY_USER_TEMPLATE)};
-    get_query->setInt(1, user_id);
-    std::unique_ptr<sql::ResultSet> row{get_query->executeQuery()};
-
+    std::unique_ptr<sql::PreparedStatement> get_query;
+    std::unique_ptr<sql::ResultSet> row;
+    string query{SOURCE_BY_TEMPLATE};
+    if (user_id != 0) {
+      query += BY_USER_ID;
+      get_query.reset(conn_->prepareStatement(query));
+      get_query->setInt(1, user_id);
+      row.reset(get_query->executeQuery());
+    } else {
+      query += BY_USERNAME;
+      get_query.reset(conn_->prepareStatement(query));
+      get_query->setString(1, username);
+      row.reset(get_query->executeQuery());
+    }
     sources_info.clear();
     while (row->next()) {
       sources_info.emplace_back();
@@ -262,12 +240,22 @@ std::error_condition MetadataSqlStore::get_sources_by_user(
     }
     return make_error_condition(SqlErr::OK);
   } catch (const sql::SQLException& e) {
-    LOG(WARNING) << "MetadataSqlStore::get_source_by_user() - sql exception - "
-                 << e.what();
+    LOG(WARNING) << "MetadataSqlStore::get_source_by - sql exception - "
+                 << "(user_id=" << user_id << "; username=" << username
+                 << "): " << e.what();
   }
   return make_error_condition(SqlErr::SQL_CONNECTION_ERROR);
 }
 
+std::error_condition MetadataSqlStore::get_sources_by_user(
+    vector<SourceInfo>& sources_info, const int user_id) {
+  return get_sources_by(sources_info, user_id);
+}
+
+std::error_condition MetadataSqlStore::get_sources_by_username(
+    std::vector<SourceInfo>& sources_info, const std::string& username) {
+  return get_sources_by(sources_info, 0, username);
+}
 
 MetadataSqlStoreTasklet::MetadataSqlStoreTasklet(
     zmq::context_t& context, const std::string& host, const uint16_t port,
@@ -334,6 +322,19 @@ std::error_condition MetadataSqlStoreTasklet::get_sources_by_user(
             &MetadataSqlStore::get_sources_by_user, store_.get(), _1, _2))))});
   }
   return get_sources_by_user_->operator()(sources_info, user_id);
+}
+
+std::error_condition MetadataSqlStoreTasklet::get_sources_by_username(
+    std::vector<SourceInfo>& sources_info, const std::string& username) {
+  using namespace std::placeholders;
+  if (!get_sources_by_username_.get()) {
+    get_sources_by_username_.reset(
+        new lib::Connection<get_sources_by_username_type>{std::move(
+            tasklet_.connect(get_sources_by_username_type(std::bind(
+                    &MetadataSqlStore::get_sources_by_username, store_.get(), _1, _2))))
+              });
+  }
+  return get_sources_by_username_->operator()(sources_info, username);
 }
 
 
