@@ -78,8 +78,6 @@ inline bool schema_has_invalid_features(const core::Schema& schema) {
 class MaybeError {
  public:
   MaybeError() = default;
-  MaybeError(const MaybeError&) = default;
-  MaybeError(MaybeError&&) = default;
   MaybeError(std::string msg)
       : err_{true}, msg_(std::move(msg)) {}
 

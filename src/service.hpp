@@ -2,6 +2,7 @@
 #define REINFERIO_SALTFISH_SERVICE_HPP
 
 #include "sql.hpp"
+#include "record_summarizer.hpp"
 #include "reinferio/saltfish.pb.h"
 #include "reinferio/saltfish.rpcz.h"
 
@@ -84,6 +85,8 @@ class SaltfishServiceImpl : public SaltfishService {
   const std::string schemas_bucket_;
 
   std::vector<ListenerInfo> listeners_;
+
+  SummarizerMap summarizer_map_;
 };
 
 }}  // namespace reinferio::saltfish

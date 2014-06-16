@@ -42,6 +42,20 @@ target_link_libraries(
 )
 
 add_library(
+  statistics
+    record_summarizer.hpp
+    record_summarizer.cpp
+)
+target_link_libraries(
+  statistics
+    treadmill
+    source_pb_lib
+    service_pb_lib
+    ${GLOG_LIBRARY}
+    ${PROTOBUF_LIBRARY}
+)
+
+add_library(
   saltfish_service
     service.hpp
     service.cpp
@@ -52,6 +66,7 @@ target_link_libraries(
     sql_pool
     source_pb_lib
     service_pb_lib
+    statistics
     riakpp
     rpcz
     ${Boost_LIBRARIES}
@@ -95,18 +110,8 @@ target_link_libraries(
     ${PROTOBUF_LIBRARY}
 )
 
-add_executable(
-  test_riak
-    test_riak.cpp
-)
-target_link_libraries(
-  test_riak
-    riakpp
-    ${Boost_LIBRARIES}
-    ${PROTOBUF_LIBRARY}
-)
-
+add_subdirectory(treadmill)
 
 # Install targets
-# ==============================================================================
+# =========================================================================
 install(TARGETS saltfish DESTINATION bin)

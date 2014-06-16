@@ -1,6 +1,7 @@
 include(ExternalProject)
 
 include_directories(../src)
+include_directories(../src/treadmill)
 
 ExternalProject_Add(
     GTest
@@ -24,7 +25,6 @@ ExternalProject_Get_Property(GMock binary_dir)
 ExternalProject_Get_Property(GMock source_dir)
 include_directories(${source_dir}/include)
 link_directories(${binary_dir})
-
 
 add_executable(
   test_service_utils
@@ -55,6 +55,25 @@ target_link_libraries(
     pthread
     ${GLOG_LIBRARY}
 )
+
+add_executable(
+  test_treadmill
+    test_moments_summarizer.cpp
+    test_categorical_histogram_summarizer.cpp
+    ${source_dir}
+)
+target_link_libraries(
+  test_treadmill
+    treadmill
+    pthread
+    gtest
+    gtest_main
+)
+
+# add_custom_target(
+#     test test_treadmill --gtest_catch_exceptions=1 --gtest_color=yes 1>&2
+#     DEPENDS test_treadmill
+# )
 
 
 # file(GLOB TEST_FILES *_test.cpp)

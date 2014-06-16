@@ -172,7 +172,11 @@ SaltfishServiceImpl::SaltfishServiceImpl(
        ios_{ios},
        max_generate_id_count_{max_generate_id_count},
        sources_data_bucket_prefix_{sources_data_bucket_prefix},
-       schemas_bucket_{schemas_bucket} {
+       schemas_bucket_{schemas_bucket},
+       summarizer_map_{riak_client, schemas_bucket} {
+  auto listener = bind(
+      &SummarizerMap::push_request, &summarizer_map_, _1, _2);
+  register_listener(RequestType::PUT_RECORDS, listener);
 }
 
 void SaltfishServiceImpl::async_call_listeners(
@@ -348,9 +352,12 @@ void SaltfishServiceImpl::get_sources(
   if (request.has_source_id()) {
     GetSourcesResponse response;
     auto& source_info = *response.add_sources_info();
-    error_condition sql_response = sql_store_.get_source_by_id(
-        source_info, request.source_id());
+    error_condition sql_response =
+        sql_store_.get_source_by_id(source_info, request.source_id());
     if (sql_response == SqlErr::OK) {
+      if (request.with_stats()) {
+        source_info.set_stats(summarizer_map_.to_json(request.source_id()));
+      }
       response.set_status(GetSourcesResponse::OK);
       reply.send(response);
       return;
@@ -371,6 +378,11 @@ void SaltfishServiceImpl::get_sources(
     if (sql_response == SqlErr::OK) {
       GetSourcesResponse response;
       for (auto& source_info : sources_info) {
+        if (request.with_stats()) {
+          source_info.set_stats(summarizer_map_.to_json(request.source_id()));
+        }
+        source_info.set_stats(
+            summarizer_map_.to_json(source_info.source().source_id()));
         *response.add_sources_info() = source_info;
       }
       response.set_status(GetSourcesResponse::OK);
@@ -515,7 +527,9 @@ void SaltfishServiceImpl::put_records(
   for_each(fetch_closures.begin(), fetch_closures.end(),
            [](function<void()>& closure) { closure(); });
 
-  // async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
+  // TODO: This is incorrect, needs to call listeners only if successful
+  async_call_listeners(
+      RequestType::PUT_RECORDS, request.SerializeAsString());
 }
 
 }}  // namespace reinferio::saltfish

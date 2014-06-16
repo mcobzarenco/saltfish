@@ -17,6 +17,7 @@ find_package(
 
 find_package(ProtobufPlugin REQUIRED)
 find_package(Glog REQUIRED)
+find_package(JsonCpp REQUIRED)
 
 find_package(CoreProto  REQUIRED)
 find_package(SaltfishProto  REQUIRED)
@@ -25,6 +26,7 @@ include_directories(
   ${Boost_INCLUDE_DIR}
   ${GLOG_INCLUDE_DIR}
   ${PROTOBUF_INCLUDE_DIR}
+  ${JSONCPP_INCLUDE_DIR}
 )
 
 include_directories(${PROJECT_BINARY_DIR}/src)
