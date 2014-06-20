@@ -121,9 +121,7 @@ template<typename RealSummarizer, typename CategoricalSummarizer>
 template<class Archive>
 void RecordSummarizer<RealSummarizer, CategoricalSummarizer>::save(
     Archive& archive) const {
-  std::string schema_str;
-  schema_.SerializeToString(&schema_str);
-  archive(schema_str, real_summ_, categorical_summ_);
+  archive(schema_.SerializeAsString(), real_summ_, categorical_summ_);
 }
 
 template<typename RealSummarizer, typename CategoricalSummarizer>

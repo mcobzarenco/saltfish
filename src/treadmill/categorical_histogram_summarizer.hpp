@@ -37,7 +37,7 @@ class CategoricalHistogramSummarizer : public CategoricalVariableSummarizer {
   const_iterator end() const { return value_counts_.end(); }
 
   template<class Archive>
-  void save(Archive& archive) const {
+  void serialize(Archive& archive) {
     archive(num_values_, num_missing_, value_counts_);
   }
   inline bool operator ==(const CategoricalHistogramSummarizer& o);

@@ -27,7 +27,7 @@ class MomentsSummarizer : public RealVariableSummarizer {
   uint64_t num_missing() const noexcept { return num_missing_; }
 
   template<class Archive>
-  void save(Archive & archive) const {
+  void serialize(Archive & archive) {
     archive(mean_, m2_, num_values_, num_missing_);
   }
 

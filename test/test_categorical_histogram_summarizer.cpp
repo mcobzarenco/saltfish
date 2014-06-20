@@ -7,7 +7,6 @@
 
 #include <sstream>
 #include <vector>
-#include <iostream>
 
 
 namespace reinferio { namespace treadmill {
@@ -103,7 +102,6 @@ TEST(CategoricalHistogramSummarizerTest, Serialization) {
     CategoricalHistogramSummarizer bin_summ, text_summ;
     in_text(text_summ);
     in_binary(bin_summ);
-    cerr << text_stream.str() << endl;
 
     ASSERT_TRUE(summarizer == bin_summ);
     ASSERT_TRUE(summarizer == text_summ);
