@@ -60,11 +60,13 @@ add_executable(
   test_treadmill
     test_moments_summarizer.cpp
     test_categorical_histogram_summarizer.cpp
+    test_record_summarizer.cpp
     ${source_dir}
 )
 target_link_libraries(
   test_treadmill
     treadmill
+    record_summarizer
     pthread
     gtest
     gtest_main

@@ -1,18 +1,25 @@
 #include "categorical_histogram_summarizer.hpp"
 
+#include <cereal/archives/binary.hpp>
+#include <cereal/archives/json.hpp>
 #include <gtest/gtest.h>
 #include <json/json.h>
-#include <vector>
 
-namespace reinferio {
-namespace treadmill {
+#include <sstream>
+#include <vector>
+#include <iostream>
+
+
+namespace reinferio { namespace treadmill {
 namespace {
+
+using namespace std;
 
 void validateJson(const CategoricalHistogramSummarizer& summarizer) {
   auto summary = Json::Value{};
   summarizer.updateJsonSummary(summary);
-  EXPECT_EQ(summarizer.num_values_with_duplicates(),
-            summary["num_values_with_duplicates"].asUInt64());
+  EXPECT_EQ(summarizer.num_values(),
+            summary["num_values"].asUInt64());
   EXPECT_EQ(summarizer.num_unique_values(),
             summary["num_unique_values"].asUInt64());
   EXPECT_EQ(summarizer.num_missing(),
@@ -30,7 +37,7 @@ void validateJson(const CategoricalHistogramSummarizer& summarizer) {
   }
 
   EXPECT_EQ(counted_unique, summarizer.num_unique_values());
-  EXPECT_EQ(sum_of_counts, summarizer.num_values_with_duplicates());
+  EXPECT_EQ(sum_of_counts, summarizer.num_values());
 }
 
 TEST(CategoricalHistogramSummarizerTest, NoData) {
@@ -43,7 +50,7 @@ TEST(CategoricalHistogramSummarizerTest, OnlyMissing) {
   for (int i = 0; i < 100; ++i) summarizer.pushValueFast("");
   for (int i = 0; i < 100; ++i) summarizer.pushValue("");
   EXPECT_EQ(0, summarizer.num_unique_values());
-  EXPECT_EQ(0, summarizer.num_values_with_duplicates());
+  EXPECT_EQ(0, summarizer.num_values());
   EXPECT_EQ(200, summarizer.num_missing());
   validateJson(summarizer);
 }
@@ -71,11 +78,46 @@ TEST(CategoricalHistogramSummarizerTest, SomeDataAndSomeMissing) {
   EXPECT_EQ(num_iterations * num_c, summarizer.value_count("c"));
   EXPECT_EQ(num_iterations * num_missing, summarizer.num_missing());
   EXPECT_EQ(num_iterations * (some_data.size() - num_missing),
-            summarizer.num_values_with_duplicates());
+            summarizer.num_values());
 
   validateJson(summarizer);
 }
 
-}  // namespace
-}  // namespace treadmill
-}  // namespace reinferio
+TEST(CategoricalHistogramSummarizerTest, Serialization) {
+  CategoricalHistogramSummarizer summarizer;
+  const auto some_data = std::vector<std::string>{
+    "a", "b", "a", "a", "", "b", "b", "c", "a", "", "", "a"};
+  const auto num_iterations = 100;
+  int iter{0};
+
+  do {
+    stringstream bin_stream, text_stream;
+    {
+      cereal::JSONOutputArchive text_archive(text_stream);
+      cereal::BinaryOutputArchive bin_archive(bin_stream);
+      text_archive(summarizer);
+      bin_archive(summarizer);
+    }
+    cereal::JSONInputArchive in_text(text_stream);
+    cereal::BinaryInputArchive in_binary(bin_stream);
+    CategoricalHistogramSummarizer bin_summ, text_summ;
+    in_text(text_summ);
+    in_binary(bin_summ);
+    cerr << text_stream.str() << endl;
+
+    ASSERT_TRUE(summarizer == bin_summ);
+    ASSERT_TRUE(summarizer == text_summ);
+
+    for (int i = 0; i < num_iterations; ++i) {
+      for (const auto& value : some_data) {
+        if (i % 3 == 0) {
+          summarizer.pushValueFast(value);
+        } else {
+          summarizer.pushValue(value);
+        }
+      }
+    }
+  } while (iter++ < 1);
+}
+
+}}}  // namespace reinferio::treadmill

@@ -12,8 +12,7 @@ void CategoricalHistogramSummarizer::pushValue(const std::string& new_value)
 
 void CategoricalHistogramSummarizer::updateJsonSummary(Json::Value& summary)
    const noexcept {
-  summary["num_values_with_duplicates"] =
-      Json::UInt64{num_values_with_duplicates()};
+  summary["num_values"] = Json::UInt64{num_values()};
   summary["num_unique_values"] = Json::UInt64{num_unique_values()};
   summary["num_missing"] = Json::UInt64{num_missing()};
   auto& histogram = summary["histogram"];

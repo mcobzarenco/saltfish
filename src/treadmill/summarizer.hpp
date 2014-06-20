@@ -2,9 +2,11 @@
 #define REINFERIO_TREADMILL_SUMMARIZER_HPP_
 
 #include <boost/property_tree/ptree_fwd.hpp>
-#include <json/forwards.h>
 #include <string>
 
+namespace Json {
+class Value;
+}
 
 namespace reinferio { namespace treadmill {
 

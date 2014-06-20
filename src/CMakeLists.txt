@@ -42,12 +42,12 @@ target_link_libraries(
 )
 
 add_library(
-  statistics
+  record_summarizer
     record_summarizer.hpp
     record_summarizer.cpp
 )
 target_link_libraries(
-  statistics
+  record_summarizer
     treadmill
     source_pb_lib
     service_pb_lib
@@ -66,7 +66,7 @@ target_link_libraries(
     sql_pool
     source_pb_lib
     service_pb_lib
-    statistics
+    record_summarizer
     riakpp
     rpcz
     ${Boost_LIBRARIES}

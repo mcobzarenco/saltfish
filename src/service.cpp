@@ -379,10 +379,9 @@ void SaltfishServiceImpl::get_sources(
       GetSourcesResponse response;
       for (auto& source_info : sources_info) {
         if (request.with_stats()) {
-          source_info.set_stats(summarizer_map_.to_json(request.source_id()));
+          source_info.set_stats(
+              summarizer_map_.to_json(source_info.source().source_id()));
         }
-        source_info.set_stats(
-            summarizer_map_.to_json(source_info.source().source_id()));
         *response.add_sources_info() = source_info;
       }
       response.set_status(GetSourcesResponse::OK);

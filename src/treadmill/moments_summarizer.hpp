@@ -3,6 +3,8 @@
 
 #include "summarizer.hpp"
 
+#include <cereal/cereal.hpp>
+
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -23,6 +25,18 @@ class MomentsSummarizer : public RealVariableSummarizer {
 
   uint64_t num_values() const noexcept { return num_values_; }
   uint64_t num_missing() const noexcept { return num_missing_; }
+
+  template<class Archive>
+  void save(Archive & archive) const {
+    archive(mean_, m2_, num_values_, num_missing_);
+  }
+
+  inline bool operator ==(const MomentsSummarizer& o) {
+    return (this->mean_ == o.mean_)
+        && (this->m2_ == o.m2_)
+        && (this->num_values_ == o.num_values_)
+        && (this->num_missing_ == o.num_missing_);
+  }
 
  private:
   double mean_ = 0.0;

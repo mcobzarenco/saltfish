@@ -1,8 +1,11 @@
 #include "moments_summarizer.hpp"
 
-#include <cmath>
+#include <cereal/archives/binary.hpp>
+#include <cereal/archives/json.hpp>
 #include <gtest/gtest.h>
 #include <json/value.h>
+
+#include <cmath>
 
 // Feels like C.
 #define ARRAY_SIZEOF(x) (sizeof((x)) / sizeof((x)[0]))
@@ -20,9 +23,11 @@
       } \
     } while(false)
 
-namespace reinferio {
-namespace treadmill {
+namespace reinferio { namespace treadmill {
 namespace {
+
+using namespace std;
+
 // Checks JSON summary corresponds to values reported by getters.
 void validateJson(const MomentsSummarizer& summarizer) {
   // Wrap in for-loop to make sure calling updateJsonSummary doesn't break it.
@@ -132,6 +137,42 @@ TEST(MomentsSummarizerTest, UniformDataWithMissing) {
 
   validateJson(summarizer);
 }
+
+TEST(MomentsSummarizerTest, Serialization) {
+  MomentsSummarizer summarizer;
+  int k = 0, missing = 0;
+  int iter{0};
+  do {
+    stringstream stream, text_stream;
+    {
+      cereal::JSONOutputArchive text_archive(text_stream);
+      cereal::BinaryOutputArchive bin_archive(stream);
+      text_archive(summarizer);
+      bin_archive(summarizer);
+    }
+    stringstream in_stream{stream.str()}, in_text_stream{text_stream.str()};
+    cereal::JSONInputArchive in_text(in_text_stream);
+    cereal::BinaryInputArchive in_binary(in_stream);
+    MomentsSummarizer bin_summ, text_summ;
+    in_text(text_summ);
+    in_binary(bin_summ);
+
+    ASSERT_TRUE(summarizer == bin_summ);
+    ASSERT_TRUE(summarizer == text_summ);
+
+    for (auto point : kUniformData) {
+      // Every three points add a missing value.
+      if (k % 3 == 0) {
+        ++missing;
+        summarizer.pushValueFast(std::numeric_limits<double>::quiet_NaN());
+      }
+      ++k;
+
+      summarizer.pushValueFast(point);
+    }
+  } while (iter++ < 1);
+}
+
 
 }  // namespace
 }  // namespace treadmill

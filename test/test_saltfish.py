@@ -166,7 +166,6 @@ class SaltfishTests(unittest.TestCase):
          created, username, email FROM list_sources WHERE """
         args = [source_id, user_id, username]
         assert sum(map(lambda x: x is not None, args)) == 1
-        print(args)
 
         conn = cls._sql.check_out_connection()
         assert conn is not None
@@ -189,7 +188,6 @@ class SaltfishTests(unittest.TestCase):
                 if cls._sql.get_user(
                         user_id=user_id, username=username) is None:
                     return None
-        print(sources)
         return [ListSourcesRecord(
             source_id=source[0], user_id=source[1],
             source_schema=parse_schema(source[2]),
@@ -457,7 +455,6 @@ class SaltfishTests(unittest.TestCase):
         self.assertEqual(len(self._records), len(put_resp.record_ids))
         bucket = self.__class__._config.sources_data_bucket_prefix + \
                  str(uuid2hex(source_id))
-        print(put_resp.record_ids)
         for i, record_id in enumerate(put_resp.record_ids):
             self.assertEqual(8, len(record_id))  # record_ids are int64_t
             log.info('Checking record at b=%s / k=%20s)' %
