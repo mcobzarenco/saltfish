@@ -50,15 +50,18 @@ void SummarizerMap::push_request(RequestType type, const std::string& msg) {
 }
 
 std::string SummarizerMap::to_json(const std::string& source_id) {
-  auto summarizer_it = summarizers_.find(source_id);
-  if (summarizer_it == summarizers_.end()) {
-    StandardSummarizer record_summarizer;
-    load_summarizer(record_summarizer, source_id);
-    auto map_pair = summarizers_.emplace(source_id, record_summarizer);
-    CHECK(map_pair.second);
-    summarizer_it = map_pair.first;
+  auto insertion = summarizers_.emplace(source_id, StandardSummarizer{});
+  bool missing_summarizer{insertion.second};
+  auto* summarizer = &insertion.first->second;
+  if (missing_summarizer) {
+    if (!load_summarizer(*summarizer, source_id)) {
+      summarizers_.erase(insertion.first);
+      summarizer = nullptr;
+      return {};
+    }
   }
-  return summarizer_it->second.to_json();
+  CHECK(summarizer);
+  return summarizer->to_json();
 }
 
 bool SummarizerMap::fetch_schema(
