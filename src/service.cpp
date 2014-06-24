@@ -258,7 +258,7 @@ void SaltfishServiceImpl::create_source(
     riak::object object(schemas_bucket_, source_id);
     source.schema().SerializeToString(&object.value());
     riak_client_.store(
-        object, [&reply, source_id, this] (const error_code error) {
+        object, [reply, source_id, this] (const error_code error) mutable {
           CreateSourceResponse response;
           auto status = error ?
               CreateSourceResponse::NETWORK_ERROR : CreateSourceResponse::OK;
