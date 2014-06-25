@@ -117,8 +117,6 @@ bool SummarizerMap::load_summarizer(
               status = true;
             }
           }
-        } else {
-          LOG(FATAL) << "Could not retrieve schema";
         }
         got_summarizer = true;
         fetch_cv.notify_one();
