@@ -24,7 +24,7 @@ void SummarizerMap::push_request(RequestType type, const std::string& msg) {
   CHECK_EQ(type, PUT_RECORDS)
       << "SummarizerMap should only be subscribed to put_records()";
   PutRecordsRequest request;
-  request.ParseFromString(msg);
+  CHECK(request.ParseFromString(msg));
 
   auto summarizer_it = summarizers_.find(request.source_id());
   if (summarizer_it == summarizers_.end()) {
@@ -41,9 +41,8 @@ void SummarizerMap::push_request(RequestType type, const std::string& msg) {
     LOG(INFO) << "Source schema id=" << string_to_hex(request.source_id())
               << " already in the map.";
   }
-  for (auto tag_record : request.records()) {
+  for (const auto& tag_record : request.records()) {
     summarizer_it->second.push_record(tag_record.record());
-    // LOG(INFO) << tag_record.DebugString();
   }
   save_summarizer(request.source_id(), summarizer_it->second);
   // LOG(INFO) << "State after req=" << summarizer_it->second.to_json();
