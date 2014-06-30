@@ -19,15 +19,19 @@ RedisPublisher::RedisPublisher(
 }
 
 void RedisPublisher::publish(RequestType type, const string& msg) {
-  LOG(INFO) << "Publishing msg on Redis";
+  // TODO(cristicbz): Publish more request types once we overhaul listener
+  // system.
+  if (type != PUT_RECORDS) return;
+
+  LOG(INFO) << "Publishing msg on Redis " << type << " " << PUT_RECORDS;
   auto del = [](redisReply* r) {
     LOG(INFO) << "freeing redis reply";
     freeReplyObject(r);
   };
   unique_ptr<redisReply, decltype(del)> reply{static_cast<redisReply *>(
-  redisCommand(context_, "PUBLISH %s %s", key.c_str(), msg.c_str())), del};
+  redisCommand(context_, "PUBLISH %b %b",
+               key.c_str(), key.size(), msg.c_str(), msg.size())), del};
   LOG(INFO) << "Redis reply: " << reply->str;
 }
-
 
 }}  // namespace reinferio::saltfish
