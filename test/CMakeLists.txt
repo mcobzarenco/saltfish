@@ -25,7 +25,6 @@ ExternalProject_Get_Property(GMock source_dir)
 include_directories(${source_dir}/include)
 link_directories(${binary_dir})
 
-
 add_executable(
   test_service_utils
     test_service_utils.cpp

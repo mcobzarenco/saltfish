@@ -254,7 +254,7 @@ void SaltfishServiceImpl::create_source(
     riak::object object(schemas_bucket_, source_id);
     source.schema().SerializeToString(&object.value());
     riak_client_.store(
-        object, [&reply, source_id, this] (const error_code error) {
+        object, [reply, source_id, this] (const error_code error) mutable {
           CreateSourceResponse response;
           auto status = error ?
               CreateSourceResponse::NETWORK_ERROR : CreateSourceResponse::OK;
@@ -348,8 +348,8 @@ void SaltfishServiceImpl::get_sources(
   if (request.has_source_id()) {
     GetSourcesResponse response;
     auto& source_info = *response.add_sources_info();
-    error_condition sql_response = sql_store_.get_source_by_id(
-        source_info, request.source_id());
+    error_condition sql_response =
+      sql_store_.get_source_by_id(source_info, request.source_id());
     if (sql_response == SqlErr::OK) {
       response.set_status(GetSourcesResponse::OK);
       reply.send(response);
@@ -515,7 +515,8 @@ void SaltfishServiceImpl::put_records(
   for_each(fetch_closures.begin(), fetch_closures.end(),
            [](function<void()>& closure) { closure(); });
 
-  // async_call_listeners(RequestType::CREATE_SOURCE, request.SerializeAsString());
+  // TODO: This is incorrect, needs to call listeners only if successful
+  async_call_listeners(RequestType::PUT_RECORDS, request.SerializeAsString());
 }
 
 }}  // namespace reinferio::saltfish
