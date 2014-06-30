@@ -180,7 +180,7 @@ void SaltfishServiceImpl::async_call_listeners(
   for (auto& listener : listeners_) {
     if(listener.listens_to == req_type ||
        listener.listens_to == RequestType::ALL) {
-      auto handler = bind(listener.handler, listener.listens_to, request);
+      auto handler = bind(listener.handler, req_type, request);
       listener.strand.post(handler);
     }
   }
