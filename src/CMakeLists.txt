@@ -95,18 +95,6 @@ target_link_libraries(
     ${PROTOBUF_LIBRARY}
 )
 
-add_executable(
-  test_riak
-    test_riak.cpp
-)
-target_link_libraries(
-  test_riak
-    riakpp
-    ${Boost_LIBRARIES}
-    ${PROTOBUF_LIBRARY}
-)
-
-
 # Install targets
 # ==============================================================================
 install(TARGETS saltfish DESTINATION bin)
