@@ -1,28 +1,28 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import argparse
-import unittest
+import logging
+import multiprocessing
+import os
+import struct
 import sys
 import time
-import multiprocessing
-import logging
-import struct
-from base64 import b64decode, b64encode
+import unittest
+from base64 import urlsafe_b64decode as b64decode, \
+    urlsafe_b64encode as b64encode
 from collections import namedtuple
 from copy import deepcopy
 from os.path import join
 from random import randint
 
 import google.protobuf
+import pymysql
+import riak
 import rpcz
 from rpcz.rpc import RpcDeadlineExceeded
 from rpcz import compiler
-import pymysql
-import riak
-import uuid
 
 from reinferio.store import SqlStore
-
 from reinferio import core_pb2
 from reinferio import saltfish_pb2
 from reinferio.saltfish_pb2 import \
@@ -36,9 +36,9 @@ from reinferio.saltfish_pb2 import \
 PROTO_ROOT = join('..', 'src', 'proto')
 DEFAULT_CONNECT = 'tcp://localhost:5555'
 DEFAULT_RIAK_HOST = 'localhost'
-DEFAULT_RIAK_PORT = 10017
+DEFAULT_RIAK_PORT = 8087
 
-SOURCE_ID_BYTES = 16
+SOURCE_ID_BYTES = 24
 
 TEST_PASSED = '*** OK ***'
 FAILED_PREFIX = 'TEST FAILED | '
@@ -89,10 +89,6 @@ def make_put_records_req(source_id, records=None, record_ids=None):
     return request
 
 
-def uuid2hex(uuid_str):
-    return str(uuid.UUID(bytes=uuid_str)).replace('-', '')
-
-
 def bytes_to_int64(int_str):
     return struct.unpack("<q", int_str)[0]
 
@@ -111,6 +107,7 @@ def parse_schema(schema_str):
 class BinaryString(str):
     def encode(self, ignored):
         return self
+
 
 ListSourcesRecord = namedtuple('ListSourcesRecord', [
     'source_id', 'user_id', 'source_schema', 'name', 'private',
@@ -220,6 +217,7 @@ class SaltfishTests(unittest.TestCase):
 
         cls = self.__class__
         remote = cls.get_sources(source_id=source_id)
+        self.assertIsNotNone(remote)
         self.assertEqual(1, len(remote))
         remote = remote[0]
 
@@ -230,7 +228,7 @@ class SaltfishTests(unittest.TestCase):
         self.assertNotEqual(
             cached.encoded_data, '',
             "The schema had not been cached in Riak b=%s k=%s (=source_id)" %
-            (cls._config.schemas_bucket, uuid2hex(source_id)))
+            (cls._config.schemas_bucket, b64encode(source_id)))
 
         cached_schema = core_pb2.Schema()
         cached_schema.ParseFromString(cached.encoded_data)
@@ -250,6 +248,7 @@ class SaltfishTests(unittest.TestCase):
             request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(CreateSourceResponse.OK, response.status)
         source_id = response.source_id
+        print(source_id, b64encode(source_id))
 
         self.verify_created_source(source_id, request)
         if request.source.source_id:
@@ -258,14 +257,14 @@ class SaltfishTests(unittest.TestCase):
             request.source.source_id = source_id
 
         log.info('Sending a 2nd identical request to check '
-                 'idempotency (source_id=%s)' % uuid2hex(source_id))
+                 'idempotency (source_id=%s)' % b64encode(source_id))
         response2 = self._service.create_source(
             request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(CreateSourceResponse.OK, response2.status)
         self.verify_created_source(source_id, request)
 
         log.info('Trying same id, but different schema. ' \
-                 'Error expected (source_id=%s)' % uuid2hex(source_id))
+                 'Error expected (source_id=%s)' % b64encode(source_id))
         features = deepcopy(self._features)
         features[1]['type'] = core_pb2.Feature.CATEGORICAL
         request3 = make_create_source_req(
@@ -286,13 +285,13 @@ class SaltfishTests(unittest.TestCase):
 
     ### Test functions ###
     def test_create_source_with_given_source_id(self):
-        source_id = uuid.uuid4()
+        source_id = os.urandom(SOURCE_ID_BYTES)
         user_id = self.__class__._user_id1
         source_name = ur"Some Test Source-123客\x00家話\\;"
         request = make_create_source_req(
-            source_id.get_bytes(), user_id, source_name, self._features)
+            source_id, user_id, source_name, self._features)
         log.info('Creating a new source with a given id (id=%s)..' %
-                 uuid2hex(source_id.get_bytes()))
+                 b64encode(source_id))
         self.try_create_source(request)
 
     def test_create_source_with_no_source_id(self):
@@ -317,7 +316,7 @@ class SaltfishTests(unittest.TestCase):
 
     def test_create_source_duplicate_feature_name(self):
         user_id = self.__class__._user_id2
-        source_id = uuid.uuid4().get_bytes()
+        source_id = os.urandom(SOURCE_ID_BYTES)
         self._features.append(self._features[0])
         request = make_create_source_req(source_id, user_id,
                                          features=self._features)
@@ -349,8 +348,8 @@ class SaltfishTests(unittest.TestCase):
     def test_create_source_two_sources_same_name(self):
         user_id = self.__class__._user_id1
         source_name = u"iris-dataset"
-        source_id1 = uuid.uuid4().get_bytes()
-        source_id2 = uuid.uuid4().get_bytes()
+        source_id1 = os.urandom(SOURCE_ID_BYTES)
+        source_id2 = os.urandom(SOURCE_ID_BYTES)
 
         # Only the source ids differ:
         request1 = make_create_source_req(
@@ -382,7 +381,7 @@ class SaltfishTests(unittest.TestCase):
         self.assertIsNotNone(self.__class__.get_sources(source_id))
 
         log.info('Deleting the just created source with id=%s'
-                 % uuid2hex(source_id))
+                 % b64encode(source_id))
         delete_request.source_id = source_id
         delete_response = self._service.delete_source(
             delete_request, deadline_ms=DEFAULT_DEADLINE)
@@ -391,7 +390,7 @@ class SaltfishTests(unittest.TestCase):
         self.assertIsNone(self.__class__.get_sources(source_id))
 
         log.info('Making a 2nd identical delete_source call '
-                 'to check idempotency (source_id=%s)'  % uuid2hex(source_id))
+                 'to check idempotency (source_id=%s)'  % b64encode(source_id))
         delete_response = self._service.delete_source(
             delete_request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(DeleteSourceResponse.OK, delete_response.status)
@@ -448,14 +447,14 @@ class SaltfishTests(unittest.TestCase):
                                         features=self._features).source_id
 
         log.info('Inserting %d records into newly created source (id=%s)' %
-                     (len(self._records), uuid2hex(source_id)))
+                     (len(self._records), b64encode(source_id)))
         put_req = make_put_records_req(source_id, records=self._records)
         put_resp = self._service.put_records(put_req,
                                              deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(PutRecordsResponse.OK, put_resp.status)
         self.assertEqual(len(self._records), len(put_resp.record_ids))
         bucket = self.__class__._config.sources_data_bucket_prefix + \
-                 str(uuid2hex(source_id))
+                 b64encode(source_id)
 
         for i, record_id in enumerate(put_resp.record_ids):
             self.assertEqual(8, len(record_id))  # record_ids are int64_t
@@ -468,9 +467,9 @@ class SaltfishTests(unittest.TestCase):
             self.assertEqual(put_req.records[i].record, record)
 
     def test_put_records_with_nonexistent_source(self):
-        source_id = uuid.uuid4().get_bytes()
+        source_id = os.urandom(SOURCE_ID_BYTES)
         log.info('Inserting %d records into a non-exsistent source (id=%s)' \
-                 ' Error expected' % (len(self._records), uuid2hex(source_id)))
+                 ' Error expected' % (len(self._records), b64encode(source_id)))
         request = make_put_records_req(source_id, records=self._records)
         response = self._service.put_records(request, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(PutRecordsResponse.INVALID_SOURCE_ID, response.status)

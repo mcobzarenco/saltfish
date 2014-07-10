@@ -27,7 +27,7 @@ using store::SqlErr;
 
 namespace { //  Some utility functions
 
-constexpr uint32_t SOURCE_ID_WIDTH{16};
+constexpr uint32_t SOURCE_ID_WIDTH{24};
 
 //  Error messages:
 constexpr char UNKNOWN_ERROR_MESSAGE[]{
@@ -214,7 +214,7 @@ void SaltfishServiceImpl::create_source(
     return;
   }
   LOG(INFO) << "create_source() inserting source (id="
-            << string_to_hex(source_id)
+            << b64encode(source_id)
             << ", schema='" << source.schema().ShortDebugString() << "')";
 
   if (!new_source_id) {
@@ -234,7 +234,7 @@ void SaltfishServiceImpl::create_source(
       } else {
         LOG(WARNING) << "A source with the same id, but different schema "
                      << "already exists (source_id="
-                     << string_to_hex(source_id) << ")";
+                     << b64encode(source_id) << ")";
         reply_with_status(
             CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
         return;
@@ -290,7 +290,7 @@ void SaltfishServiceImpl::delete_source(
     reply_with_status(DeleteSourceResponse::INVALID_SOURCE_ID, reply);
     return;
   }
-  VLOG(0) << "delete_source(source_id=" << string_to_hex(source_id) << ")";
+  VLOG(0) << "delete_source(source_id=" << b64encode(source_id) << ")";
   int rows_updated;
   error_condition sql_response =
       sql_store_.delete_source(rows_updated, source_id);
@@ -460,10 +460,10 @@ void SaltfishServiceImpl::put_records(
   error_condition sql_response = sql_store_.fetch_schema(schema, source_id);
   if (sql_response == SqlErr::INVALID_SOURCE_ID) {
     VLOG(0) << "Received put_records request for non-existent source; id="
-            << string_to_hex(source_id);
+            << b64encode(source_id);
     stringstream msg;
     msg << "Trying to put records into non-existent source (id="
-        << string_to_hex(source_id) << ")";
+        << b64encode(source_id) << ")";
     reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
                       msg.str().c_str());
     return;
@@ -490,7 +490,7 @@ void SaltfishServiceImpl::put_records(
     reply.send(response);
   };
   stringstream bucket_ss;
-  bucket_ss << sources_data_bucket_prefix_ << string_to_hex(source_id);
+  bucket_ss << sources_data_bucket_prefix_ << b64encode(source_id);
   string bucket{bucket_ss.str()};
 
   auto replier = make_shared<ReplySync>(request.records_size(), reply_success);

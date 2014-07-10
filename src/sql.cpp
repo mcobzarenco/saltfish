@@ -86,7 +86,7 @@ std::error_condition MetadataSqlStore::fetch_schema(
       res->next();
       CHECK(schema.ParseFromString(res->getString("source_schema")))
           << "Could not parse the source schema for source_id="
-          << string_to_hex(source_id);
+          << b64encode(source_id);
       return make_error_condition(SqlErr::OK);
     }
     return make_error_condition(SqlErr::INVALID_SOURCE_ID);
@@ -162,7 +162,7 @@ void list_sources_row_to_proto(
   CHECK(source->mutable_schema()->ParseFromString(
       row.getString("source_schema")))
       << "Could not parse the source schema for source_id="
-      << string_to_hex(row.getString("source_id"));
+      << b64encode(row.getString("source_id"));
   source->set_name(row.getString("name"));
   source->set_private_(row.getBoolean("private"));
   source->set_frozen(row.getBoolean("frozen"));

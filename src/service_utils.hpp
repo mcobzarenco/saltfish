@@ -3,9 +3,8 @@
 
 #include "reinferio/saltfish.rpcz.h"
 
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_io.hpp>
-#include <boost/optional.hpp>
+#include <boost/archive/iterators/transform_width.hpp>
+#include <boost/iterator/transform_iterator.hpp>
 #include <glog/logging.h>
 #include <rpcz/rpcz.hpp>
 
@@ -27,7 +26,7 @@
 
 namespace reinferio { namespace saltfish {
 
-inline std::string gen_random_string(const uint32_t width=16) {
+inline std::string gen_random_string(const uint32_t width) {
   static const size_t BLOCK_SIZE = sizeof(uint64_t);
   static thread_local std::mt19937_64 gen(
       std::chrono::high_resolution_clock::now().time_since_epoch().count() +
@@ -50,11 +49,32 @@ inline int64_t gen_random_int64() {
   return *reinterpret_cast<const int64_t*>(id.data());
 }
 
-inline std::string string_to_hex(const std::string& source_id) {
-  constexpr char hex[]{"0123456789abcdef"};
-  std::stringstream out;
-  for (const unsigned char& c : source_id)  out << hex[c >> 4] << hex[c & 0x0F];
-  return out.str();
+inline std::string b64encode(const std::string& binary) {
+  struct from_6_bits {
+    using result_type = char;
+    char operator()(char byte) const {
+      static constexpr const char* lookup =
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      DCHECK_GE(byte, 0);
+      DCHECK_LT(byte, 64);
+      return lookup[static_cast<size_t>(byte)];
+    }
+  };
+  using boost::transform_iterator;
+  using boost::archive::iterators::transform_width;
+  using Iterator = transform_iterator<
+    from_6_bits, transform_width<std::string::const_iterator, 6, 8>>;
+
+  std::string transformed;
+  transformed.reserve(binary.size() * 4 / 3 + 4);
+  std::copy(Iterator{binary.begin()}, Iterator{binary.end()},
+            std::back_inserter(transformed));
+
+  uint8_t padding_size = (3 - (binary.size() % 3)) % 3;
+  for (size_t i_padding = 0; i_padding < padding_size; ++i_padding)
+    transformed.push_back('=');
+
+  return transformed;
 }
 
 inline bool schema_has_duplicates(const core::Schema& schema) {
