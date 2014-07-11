@@ -112,7 +112,7 @@ class MaybeError {
 
 inline MaybeError check_record(
     const core::Schema& schema, const core::Record& record) {
-  int exp_reals{0}, exp_cats{0};
+  int exp_reals{0}, exp_categoricals{0}, exp_texts{0};
   for (auto feature : schema.features()) {
     if (feature.feature_type() == core::Feature::INVALID) {
       std::ostringstream msg;
@@ -122,7 +122,9 @@ inline MaybeError check_record(
     } else if (feature.feature_type() == core::Feature::REAL) {
       exp_reals++;
     } else if (feature.feature_type() == core::Feature::CATEGORICAL) {
-      exp_cats++;
+      exp_categoricals++;
+    } else if (feature.feature_type() == core::Feature::TEXT) {
+      exp_texts++;
     } else {
       return MaybeError{
         "Source schema contains a feature unsupported by saltfish"};
@@ -133,10 +135,15 @@ inline MaybeError check_record(
     msg << "record contains " << record.reals_size()
         << " real features (expected "<< exp_reals << ")";
     return MaybeError{msg.str()};
-  } else if (record.cats_size() != exp_cats) {
+  } else if (record.cats_size() != exp_categoricals) {
     std::ostringstream msg;
     msg << "record contains " << record.cats_size()
-        << " categorical features (expected "<< exp_cats << ")";
+        << " categorical features (expected "<< exp_categoricals << ")";
+    return MaybeError{msg.str()};
+  } else if (record.texts_size() != exp_texts) {
+    std::ostringstream msg;
+    msg << "record contains " << record.texts_size()
+        << " text features (expected "<< exp_texts << ")";
     return MaybeError{msg.str()};
   }
   return MaybeError{};
