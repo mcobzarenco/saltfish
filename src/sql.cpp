@@ -166,7 +166,7 @@ void list_sources_row_to_proto(
   source->set_name(row.getString("name"));
   source->set_private_(row.getBoolean("private"));
   source->set_frozen(row.getBoolean("frozen"));
-  source->set_created(row.getInt("created"));
+  source->set_created(row.getString("created"));
 
   source_info.set_email(row.getString("email"));
   source_info.set_username(row.getString("username"));
@@ -209,8 +209,10 @@ std::error_condition MetadataSqlStore::get_sources_by(
       "SELECT source_id, user_id, source_schema, name, "
       "private, frozen, created, username, email "
       "FROM list_sources ";
-  static constexpr char BY_USER_ID[] = "WHERE user_id = ?";
-  static constexpr char BY_USERNAME[] = "WHERE username = ?";
+  static constexpr char BY_USER_ID[] =
+      "WHERE user_id = ? ORDER BY created DESC";
+  static constexpr char BY_USERNAME[] =
+      "WHERE username = ? ORDER BY created DESC";
 
   CHECK((user_id == 0) != (username == ""))
       << "Specify either user_id or username";
