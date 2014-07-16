@@ -44,9 +44,9 @@ inline std::string gen_random_string(const uint32_t width) {
   return id;
 }
 
-inline int64_t gen_random_int64() {
+inline uint64_t gen_random_uint64() {
   std::string id = gen_random_string(sizeof(uint64_t));
-  return *reinterpret_cast<const int64_t*>(id.data());
+  return *reinterpret_cast<const uint64_t*>(id.data());
 }
 
 inline std::string b64encode(const std::string& binary) {

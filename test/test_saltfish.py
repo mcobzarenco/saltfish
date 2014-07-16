@@ -39,6 +39,7 @@ DEFAULT_RIAK_HOST = 'localhost'
 DEFAULT_RIAK_PORT = 8087
 
 SOURCE_ID_BYTES = 24
+RANDOM_INDEX = 'randomindex_int'
 
 TEST_PASSED = '*** OK ***'
 FAILED_PREFIX = 'TEST FAILED | '
@@ -441,6 +442,13 @@ class SaltfishTests(unittest.TestCase):
         self.assertEqual(CreateSourceResponse.OK, create_resp.status)
         return create_resp
 
+    def _check_record_indexes(self, indexes):
+        config = self.__class__._config
+        self.assertIn(RANDOM_INDEX, map(lambda i: i[0], indexes))
+        random_index_value = filter(
+            lambda index: index[0] == RANDOM_INDEX, indexes)[0][1]
+        self.assertLess(random_index_value, config.max_random_index)
+
     def test_put_records_with_new_source(self):
         log.info('Creating a source where the records will be inserted..')
         source_id = self._ensure_source(user_id=self.__class__._user_id1,
@@ -461,7 +469,11 @@ class SaltfishTests(unittest.TestCase):
             log.info('Checking record at b=%s / k=%20s)' %
                      (bucket, bytes_to_int64(record_id)))
             remote = self._riakc.bucket(bucket).get(BinaryString(record_id))
+            self.assertTrue(remote.exists)
             self.assertIsNotNone(remote.encoded_data)
+            self._check_record_indexes(remote.indexes)
+
+
             record = core_pb2.Record()
             record.ParseFromString(remote.encoded_data)
             self.assertEqual(put_req.records[i].record, record)

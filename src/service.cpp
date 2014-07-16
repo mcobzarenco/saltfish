@@ -166,13 +166,15 @@ SaltfishServiceImpl::SaltfishServiceImpl(
     boost::asio::io_service& ios,
     uint32_t max_generate_id_count,
     const string& sources_data_bucket_prefix,
-    const string& schemas_bucket)
+    const string& schemas_bucket,
+    const uint64_t max_random_index)
     :  riak_client_{riak_client},
        sql_store_{sql_store},
        ios_{ios},
        max_generate_id_count_{max_generate_id_count},
        sources_data_bucket_prefix_{sources_data_bucket_prefix},
-       schemas_bucket_{schemas_bucket} {
+       schemas_bucket_{schemas_bucket},
+       max_random_index_{max_random_index} {
 }
 
 void SaltfishServiceImpl::async_call_listeners(
@@ -389,9 +391,9 @@ vector<string> SaltfishServiceImpl::ids_for_put_request(
   for (auto i = 0; i < request.records_size(); ++i) {
     auto tag_record = request.records(i);
     if (tag_record.record_id().empty()) {
-      const int64_t index = gen_random_int64();
+      const uint64_t index{gen_random_uint64()};
       record_ids.emplace_back(
-          reinterpret_cast<const char *>(&index), sizeof(int64_t));
+          reinterpret_cast<const char *>(&index), sizeof(uint64_t));
     } else if (tag_record.record_id().size() == sizeof(int64_t)) {
       record_ids.emplace_back(tag_record.record_id());
     }
@@ -416,13 +418,14 @@ void put_records_put_handler(shared_ptr<ReplySync> replier,
 
 void put_records_get_handler(
     riak::client& riak_client, const core::Record record,
-    const int64_t index_value, shared_ptr<ReplySync> replier,
+    const uint64_t random_index, shared_ptr<ReplySync> replier,
     rpcz::reply<PutRecordsResponse> reply,
     riak::object object, const error_code error) {
   if (!error) {
-    // auto* index = new_record->add_indexes();
-    // index->set_key("randomindex_int");
-    // index->set_value(to_string(index_value).c_str());
+    auto* index = object.raw_content().add_indexes();
+    index->set_key("randomindex_int");
+    index->set_value(to_string(random_index));
+
     record.SerializeToString(&object.value());
     auto handler = bind(&put_records_put_handler, replier, reply, _1);
     riak_client.store(object, function<void(const error_code)>{handler});
@@ -499,9 +502,9 @@ void SaltfishServiceImpl::put_records(
   for (auto i = 0; i < request.records_size(); ++i) {
     const auto& record_id = record_ids[i];
     const auto& record = request.records(i).record();
+    const uint64_t random_index{gen_random_uint64() % max_random_index_};
     auto handler = bind(&put_records_get_handler, ref(riak_client_), record,
-                        *reinterpret_cast<const int64_t*>(record_id.c_str()),
-                        replier, reply, _1,  _2);
+                        random_index, replier, reply, _1,  _2);
 
     VLOG(0) << "Queueing put_record @ (b=" << bucket << " k="
             << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";

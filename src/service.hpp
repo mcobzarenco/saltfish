@@ -39,7 +39,8 @@ class SaltfishServiceImpl : public SaltfishService {
       boost::asio::io_service& ios,
       uint32_t max_generate_id_count,
       const std::string& sources_data_bucket_prefix,
-      const std::string& schemas_bucket);
+      const std::string& schemas_bucket,
+      const uint64_t max_random_index);
 
   SaltfishServiceImpl(const SaltfishServiceImpl&) = delete;
   SaltfishServiceImpl& operator=(const SaltfishServiceImpl&) = delete;
@@ -82,6 +83,7 @@ class SaltfishServiceImpl : public SaltfishService {
   uint32_t max_generate_id_count_;
   const std::string sources_data_bucket_prefix_;
   const std::string schemas_bucket_;
+  const uint64_t max_random_index_;
 
   std::vector<ListenerInfo> listeners_;
 };
