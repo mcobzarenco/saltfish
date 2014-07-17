@@ -56,16 +56,18 @@ RUN cd /src/rpcz/python && python setup.py build && python setup.py install
 RUN cd /src && git clone https://github.com/redis/hiredis.git
 RUN cd /src/hiredis && make && make install
 
-ADD etc/id_rsa /src/
-RUN chmod 600 /src/id_rsa
-RUN echo "IdentityFile /src/id_rsa" >> /etc/ssh/ssh_config
+# Set private key for cloning private repos
+RUN mkdir -p /.ssh
+ADD etc/id_rsa /.ssh/
+RUN chmod 600 /.ssh/id_rsa
+RUN echo "IdentityFile /.ssh/id_rsa" >> /etc/ssh/ssh_config
 RUN echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config
 
 RUN cd /src && git clone git@github.com:reinferio/core-proto.git
-RUN cd /src/core-proto && ./install.sh
+RUN cd /src/core-proto && ./install.py
 
 RUN cd /src && git clone git@github.com:reinferio/saltfish-proto.git
-RUN cd /src/saltfish-proto && ./install.sh
+RUN cd /src/saltfish-proto && ./install.py
 
 # Install saltfish
 RUN apt-get install -y libgoogle-glog-dev libboost-thread-dev libboost-program-options-dev
