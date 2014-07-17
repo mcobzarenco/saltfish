@@ -56,7 +56,7 @@ RUN cd /src/rpcz/python && python setup.py build && python setup.py install
 RUN cd /src && git clone https://github.com/redis/hiredis.git
 RUN cd /src/hiredis && make && make install
 
-ADD etc/id_rsa /src/
+ADD etc/id_rsa /src/ && chmod 600 /src/id_rsa
 RUN echo "IdentityFile /src/id_rsa" >> /etc/ssh/ssh_config
 RUN echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config
 
