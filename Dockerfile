@@ -56,7 +56,8 @@ RUN cd /src/rpcz/python && python setup.py build && python setup.py install
 RUN cd /src && git clone https://github.com/redis/hiredis.git
 RUN cd /src/hiredis && make && make install
 
-ADD etc/id_rsa /src/ && chmod 600 /src/id_rsa
+ADD etc/id_rsa /src/
+RUN chmod 600 /src/id_rsa
 RUN echo "IdentityFile /src/id_rsa" >> /etc/ssh/ssh_config
 RUN echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config
 
@@ -72,10 +73,11 @@ RUN mkdir -p /src/saltfish
 ADD . /src/saltfish/
 RUN cd /src/saltfish && rm -Rf build && mkdir -p build
 RUN cd /src/saltfish/build && CXX=clang++ cmake .. && make -j4 && make install
+
 RUN /src/saltfish/build/test/test_service_utils
 RUN /src/saltfish/build/test/test_tasklet
 
 #RUN cd /src/saltfish /src/saltfish/build/test/test_tasklet
 
-#ENTRYPOINT saltfish
-CMD saltfish
+ENTRYPOINT saltfish
+#CMD saltfish
