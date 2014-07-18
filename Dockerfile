@@ -75,8 +75,7 @@ RUN mkdir -p /src/saltfish
 ADD . /src/saltfish/
 RUN cd /src/saltfish && rm -Rf build && mkdir -p build
 RUN cd /src/saltfish/build && CXX=clang++ cmake .. && make -j4 && make install
-
 RUN /src/saltfish/build/test/test_service_utils
 RUN /src/saltfish/build/test/test_tasklet
 
-ENTRYPOINT /src/saltfish/build/src/saltfish
+ENTRYPOINT ["/src/saltfish/build/src/saltfish"]
