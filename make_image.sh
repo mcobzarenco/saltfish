@@ -2,7 +2,7 @@
 set -e -v
 
 REPO=saltfish
-REGISTRY=registry.reinfer.io
+REGISTRY=registry2.reinfer.io
 
 COMMIT_SHA=$(git log -n 1 --pretty=format:"%H" | cut -c-12)
 IMAGE_SHA=$REGISTRY/$REPO:$COMMIT_SHA
