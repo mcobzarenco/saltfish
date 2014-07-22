@@ -172,8 +172,7 @@ int main(int argc, char **argv) {
         !variables[ARG_MARIADB_USER].defaulted()) {
       conf.mutable_maria_db()->set_user(sql_user);
     }
-    if (!conf.maria_db().has_password() ||
-        !variables[ARG_MARIADB_PASSWORD].defaulted()) {
+    if (variables.count(ARG_MARIADB_PASSWORD)) {
       conf.mutable_maria_db()->set_password(sql_password);
     }
 
