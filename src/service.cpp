@@ -255,7 +255,7 @@ void SaltfishServiceImpl::create_source(
     // Store a copy of the schema (which is immutable anyway) in Riak
     riak::object object(schemas_bucket_, source_id);
     source.schema().SerializeToString(&object.value());
-    riak_client_.store(
+    riak_client_.async_store(
         object, [reply, source_id, this] (const error_code error) mutable {
           CreateSourceResponse response;
           auto status = error ?
@@ -419,8 +419,8 @@ void put_records_put_handler(shared_ptr<ReplySync> replier,
 void put_records_get_handler(
     riak::client& riak_client, const core::Record record,
     const uint64_t random_index, shared_ptr<ReplySync> replier,
-    rpcz::reply<PutRecordsResponse> reply,
-    riak::object object, const error_code error) {
+    rpcz::reply<PutRecordsResponse> reply, const error_code error,
+    riak::object object) {
   if (!error) {
     auto* index = object.raw_content().add_indexes();
     index->set_key("randomindex_int");
@@ -428,7 +428,8 @@ void put_records_get_handler(
 
     record.SerializeToString(&object.value());
     auto handler = bind(&put_records_put_handler, replier, reply, _1);
-    riak_client.store(object, function<void(const error_code)>{handler});
+    // TODO(cristicbz): Investigate why the cast is needed.
+    riak_client.async_store(object, function<void(const error_code)>{handler});
   } else {
     LOG(WARNING) << "Trying fetch() from Riak bucket=" << object.bucket()
                  << " key="
@@ -509,10 +510,11 @@ void SaltfishServiceImpl::put_records(
     VLOG(0) << "Queueing put_record @ (b=" << bucket << " k="
             << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
     // riak_client_.fetch(bucket.str(), record_id, handler);
+    // TODO(cristicbz): Another case.
     fetch_closures.emplace_back([this, bucket, record_id, handler] () {
-        this->riak_client_.fetch(
+        this->riak_client_.async_fetch(
             bucket, record_id,
-            function<void(riak::object, const error_code)>{handler});
+            function<void(const error_code, riak::object)>{handler});
       });
   }
   for_each(fetch_closures.begin(), fetch_closures.end(),
