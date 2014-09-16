@@ -3,7 +3,6 @@
 #include "service_utils.hpp"
 #include "sql_errors.hpp"
 
-#include <riakpp/connection.hpp>
 #include <glog/logging.h>
 #include <boost/optional.hpp>
 
@@ -14,6 +13,7 @@
 #include <set>
 #include <sstream>
 #include <thread>
+#include <utility>
 #include <vector>
 
 

@@ -1,6 +1,5 @@
 #define BOOST_BIND_NO_PLACEHOLDERS
 
-#include <riakpp/connection_pool.hpp>
 #include "server.hpp"
 #include "service.hpp"
 #include "publishers.hpp"
