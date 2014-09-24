@@ -89,7 +89,7 @@ inline bool schema_has_duplicates(const core::Schema& schema) {
 
 inline bool schema_has_invalid_features(const core::Schema& schema) {
   auto is_invalid = [](const core::Feature& feat) -> bool {
-    return feat.feature_type() == core::Feature::INVALID; };
+    return feat.type() == core::Feature::INVALID; };
   using Compare = bool(*)(const std::string*, const std::string*);
   return std::any_of(schema.features().begin(),
                      schema.features().end(), is_invalid);
@@ -112,32 +112,32 @@ class MaybeError {
 
 inline MaybeError check_record(
     const core::Schema& schema, const core::Record& record) {
-  int exp_reals{0}, exp_categoricals{0}, exp_texts{0};
+  int exp_numericals{0}, exp_categoricals{0}, exp_texts{0};
   for (auto feature : schema.features()) {
-    if (feature.feature_type() == core::Feature::INVALID) {
+    if (feature.type() == core::Feature::INVALID) {
       std::ostringstream msg;
-      msg << "Source unusable as its schema contains a feature marked as invalid"
+      msg << "Source unusable as its schema contains an invalid feature "
           << " (feature_name=" << feature.name() << ")";
       return MaybeError{msg.str()};
-    } else if (feature.feature_type() == core::Feature::REAL) {
-      exp_reals++;
-    } else if (feature.feature_type() == core::Feature::CATEGORICAL) {
+    } else if (feature.type() == core::Feature::NUMERICAL) {
+      exp_numericals++;
+    } else if (feature.type() == core::Feature::CATEGORICAL) {
       exp_categoricals++;
-    } else if (feature.feature_type() == core::Feature::TEXT) {
+    } else if (feature.type() == core::Feature::TEXT) {
       exp_texts++;
     } else {
       return MaybeError{
         "Source schema contains a feature unsupported by saltfish"};
     }
   }
-  if (record.reals_size() != exp_reals) {
+  if (record.numericals_size() != exp_numericals) {
     std::ostringstream msg;
-    msg << "record contains " << record.reals_size()
-        << " real features (expected "<< exp_reals << ")";
+    msg << "record contains " << record.categoricals_size()
+        << " real features (expected "<< exp_numericals << ")";
     return MaybeError{msg.str()};
-  } else if (record.cats_size() != exp_categoricals) {
+  } else if (record.categoricals_size() != exp_categoricals) {
     std::ostringstream msg;
-    msg << "record contains " << record.cats_size()
+    msg << "record contains " << record.categoricals_size()
         << " categorical features (expected "<< exp_categoricals << ")";
     return MaybeError{msg.str()};
   } else if (record.texts_size() != exp_texts) {

@@ -4,15 +4,18 @@
 #include <system_error>
 #include <string>
 
+namespace {
+
+}
 
 namespace reinferio { namespace saltfish { namespace store {
 
 enum class SqlErr {
   OK = 0,
-  INVALID_SOURCE_ID,
+  INVALID_DATASET_ID,
   INVALID_USER_ID,
   INVALID_USERNAME,
-  DUPLICATE_SOURCE_NAME,
+  DUPLICATE_DATASET_NAME,
   SQL_CONNECTION_ERROR,
   UNKNOWN_ERROR,
   NUM_ERRORS
@@ -29,14 +32,14 @@ class SqlErrCategory : public std::error_category {
     switch(error) {
       case SqlErr::OK:
         return "OK";
-      case SqlErr::INVALID_SOURCE_ID:
-        return "No source exists with the provided id.";
+      case SqlErr::INVALID_DATASET_ID:
+        return "No dataset exists with the provided id.";
       case SqlErr::INVALID_USER_ID:
         return "No user exists with the provided id.";
       case SqlErr::INVALID_USERNAME:
         return "No user exists with the provided username.";
-      case SqlErr::DUPLICATE_SOURCE_NAME:
-        return "A source with the same name already exists.";
+      case SqlErr::DUPLICATE_DATASET_NAME:
+        return "A dataset with the same name already exists.";
       case SqlErr::SQL_CONNECTION_ERROR:
         return "Could not connect to MariaDB.";
       default:

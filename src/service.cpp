@@ -12,10 +12,10 @@
 #include <random>
 #include <set>
 #include <sstream>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
-
 
 namespace reinferio { namespace saltfish {
 
@@ -27,7 +27,7 @@ using store::SqlErr;
 
 namespace { //  Some utility functions
 
-constexpr uint32_t SOURCE_ID_WIDTH{24};
+constexpr uint32_t DATASET_ID_WIDTH{24};
 
 //  Error messages:
 constexpr char UNKNOWN_ERROR_MESSAGE[]{
@@ -62,47 +62,47 @@ inline void send_reply(rpcz::reply<Response>& reply,
 }
 
 inline void reply_with_status(
-    CreateSourceResponse::Status status,
-    rpcz::reply<CreateSourceResponse>& reply,
+    CreateDatasetResponse::Status status,
+    rpcz::reply<CreateDatasetResponse>& reply,
     const char* message = nullptr) {
   static const vector<const char *> error_messages =
-      make_error_messages<CreateSourceResponse>({
-          {CreateSourceResponse::UNKNOWN_ERROR, UNKNOWN_ERROR_MESSAGE},
-          {CreateSourceResponse::OK, ""},
-          {CreateSourceResponse::DUPLICATE_FEATURE_NAME,
+      make_error_messages<CreateDatasetResponse>({
+          {CreateDatasetResponse::UNKNOWN_ERROR, UNKNOWN_ERROR_MESSAGE},
+          {CreateDatasetResponse::OK, ""},
+          {CreateDatasetResponse::DUPLICATE_FEATURE_NAME,
                 "The provided schema contains duplicate feature names."},
-          {CreateSourceResponse::DUPLICATE_SOURCE_NAME,
-                sql_error_category().message(SqlErr::DUPLICATE_SOURCE_NAME)},
-          {CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS,
-                "A source with the same id, but different schema already exists."},
-          {CreateSourceResponse::INVALID_SOURCE_ID,
-                "The source id provided is invalid."},
-          {CreateSourceResponse::INVALID_USER_ID,
+          {CreateDatasetResponse::DUPLICATE_DATASET_NAME,
+                sql_error_category().message(SqlErr::DUPLICATE_DATASET_NAME)},
+          {CreateDatasetResponse::DATASET_ID_ALREADY_EXISTS,
+                "A dataset with the same id, but different schema already exists."},
+          {CreateDatasetResponse::INVALID_DATASET_ID,
+                "The dataset id provided is invalid."},
+          {CreateDatasetResponse::INVALID_USER_ID,
                 "The user id provided is invalid."},
-          {CreateSourceResponse::INVALID_FEATURE_TYPE,
+          {CreateDatasetResponse::INVALID_FEATURE_TYPE,
                 "The schema contains invalid feature types."},
-          {CreateSourceResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
+          {CreateDatasetResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
         });
 
-  if(message != nullptr)
+  if (message != nullptr)
     send_reply(reply, status, message);
   else
     send_reply(reply, status,  error_messages[status]);
 }
 
 inline void reply_with_status(
-    DeleteSourceResponse::Status status,
-    rpcz::reply<DeleteSourceResponse>& reply,
+    DeleteDatasetResponse::Status status,
+    rpcz::reply<DeleteDatasetResponse>& reply,
     const char* message = nullptr) {
   static const vector<const char *> error_messages =
-      make_error_messages<DeleteSourceResponse>({
-          {DeleteSourceResponse::UNKNOWN_ERROR, UNKNOWN_ERROR_MESSAGE},
-          {DeleteSourceResponse::OK, ""},
-          {DeleteSourceResponse::INVALID_SOURCE_ID,
-                "The source id provided is invalid"},
-          {DeleteSourceResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
+      make_error_messages<DeleteDatasetResponse>({
+          {DeleteDatasetResponse::UNKNOWN_ERROR, UNKNOWN_ERROR_MESSAGE},
+          {DeleteDatasetResponse::OK, ""},
+          {DeleteDatasetResponse::INVALID_DATASET_ID,
+                "The dataset id provided is invalid"},
+          {DeleteDatasetResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
         });
-  if(message != nullptr)
+  if (message != nullptr)
     send_reply(reply, status, message);
   else
     send_reply(reply, status,  error_messages[status]);
@@ -119,38 +119,38 @@ inline void reply_with_status(
           {PutRecordsResponse::UNKNOWN_ERROR, UNKNOWN_ERROR_MESSAGE},
           {PutRecordsResponse::OK, ""},
           {PutRecordsResponse::INVALID_SCHEMA, "Invalid schema"},
-          {PutRecordsResponse::INVALID_SOURCE_ID,
-                sql_error_category().message(SqlErr::INVALID_SOURCE_ID)},
+          {PutRecordsResponse::INVALID_DATASET_ID,
+                sql_error_category().message(SqlErr::INVALID_DATASET_ID)},
           {PutRecordsResponse::NO_RECORDS_IN_REQUEST,
                 "No records in the request."},
           {PutRecordsResponse::INVALID_RECORD, "Invalid record"},
           {PutRecordsResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
         });
-  if(message != nullptr)
+  if (message != nullptr)
     send_reply(reply, status, message);
   else
     send_reply(reply, status,  error_messages[status]);
 }
 
 inline void reply_with_status(
-    GetSourcesResponse::Status status,
-    rpcz::reply<GetSourcesResponse>& reply,
+    GetDatasetsResponse::Status status,
+    rpcz::reply<GetDatasetsResponse>& reply,
     const char* message = nullptr) {
   static const vector<const char *> error_messages =
-      make_error_messages<GetSourcesResponse>({
-          {GetSourcesResponse::UNKNOWN_ERROR, UNKNOWN_ERROR_MESSAGE},
-          {GetSourcesResponse::OK, ""},
-          {GetSourcesResponse::INVALID_SOURCE_ID,
-                sql_error_category().message(SqlErr::INVALID_SOURCE_ID)},
-          {GetSourcesResponse::INVALID_USER_ID,
+      make_error_messages<GetDatasetsResponse>({
+          {GetDatasetsResponse::UNKNOWN_ERROR, UNKNOWN_ERROR_MESSAGE},
+          {GetDatasetsResponse::OK, ""},
+          {GetDatasetsResponse::INVALID_DATASET_ID,
+                sql_error_category().message(SqlErr::INVALID_DATASET_ID)},
+          {GetDatasetsResponse::INVALID_USER_ID,
                 sql_error_category().message(SqlErr::INVALID_USER_ID)},
-          {GetSourcesResponse::INVALID_USERNAME,
+          {GetDatasetsResponse::INVALID_USERNAME,
                 sql_error_category().message(SqlErr::INVALID_USERNAME)},
-          {GetSourcesResponse::INVALID_REQUEST,
+          {GetDatasetsResponse::INVALID_REQUEST,
                 "Exactly one field should be set in the request."},
-          {GetSourcesResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
+          {GetDatasetsResponse::NETWORK_ERROR, NETWORK_ERROR_MESSAGE}
         });
-  if(message != nullptr)
+  if (message != nullptr)
     send_reply(reply, status, message);
   else
     send_reply(reply, status,  error_messages[status]);
@@ -160,27 +160,27 @@ inline void reply_with_status(
 } //  anonymous namespace
 
 
-SaltfishServiceImpl::SaltfishServiceImpl(
+DatasetStoreImpl::DatasetStoreImpl(
     riak::client& riak_client,
     store::MetadataSqlStoreTasklet& sql_store,
     boost::asio::io_service& ios,
     uint32_t max_generate_id_count,
-    const string& sources_data_bucket_prefix,
+    const string& records_bucket_prefix,
     const string& schemas_bucket,
     const uint64_t max_random_index)
     :  riak_client_{riak_client},
        sql_store_{sql_store},
        ios_{ios},
        max_generate_id_count_{max_generate_id_count},
-       sources_data_bucket_prefix_{sources_data_bucket_prefix},
+       records_bucket_prefix_{records_bucket_prefix},
        schemas_bucket_{schemas_bucket},
        max_random_index_{max_random_index} {
 }
 
-void SaltfishServiceImpl::async_call_listeners(
+void DatasetStoreImpl::async_call_listeners(
     RequestType req_type, const string& request) {
   for (auto& listener : listeners_) {
-    if(listener.listens_to == req_type ||
+    if (listener.listens_to == req_type ||
        listener.listens_to == RequestType::ALL) {
       auto handler = bind(listener.handler, req_type, request);
       listener.strand.post(handler);
@@ -188,144 +188,144 @@ void SaltfishServiceImpl::async_call_listeners(
   }
 }
 
-/***********                      create_source                     ***********/
+/***********                      create_dataset                     ***********/
 
 
-void SaltfishServiceImpl::create_source(
-    const CreateSourceRequest& request,
-    rpcz::reply<CreateSourceResponse> reply) {
-  const auto& source = request.source();
-  if (schema_has_duplicates(source.schema())) {
-    reply_with_status(CreateSourceResponse::DUPLICATE_FEATURE_NAME, reply);
+void DatasetStoreImpl::create_dataset(
+    const CreateDatasetRequest& request,
+    rpcz::reply<CreateDatasetResponse> reply) {
+  const auto& dataset = request.dataset();
+  if (schema_has_duplicates(dataset.schema())) {
+    reply_with_status(CreateDatasetResponse::DUPLICATE_FEATURE_NAME, reply);
     return;
-  } else if (schema_has_invalid_features(source.schema())) {
-    reply_with_status(CreateSourceResponse::INVALID_FEATURE_TYPE, reply);
+  } else if (schema_has_invalid_features(dataset.schema())) {
+    reply_with_status(CreateDatasetResponse::INVALID_FEATURE_TYPE, reply);
     return;
   }
-  string source_id;
-  bool new_source_id{false};
-  if (source.source_id().empty()) {
-    LOG(INFO) << "create_source() request source_id not set, generating one" ;
-    source_id = gen_random_string(SOURCE_ID_WIDTH);
-    new_source_id = true;
-  } else if (source.source_id().size() == SOURCE_ID_WIDTH) {
-    source_id = source.source_id();
+  string dataset_id;
+  bool new_dataset_id{false};
+  if (dataset.id().empty()) {
+    LOG(INFO) << "create_dataset() request dataset_id not set, generating one";
+    dataset_id = gen_random_string(DATASET_ID_WIDTH);
+    new_dataset_id = true;
+  } else if (dataset.id().size() == DATASET_ID_WIDTH) {
+    dataset_id = dataset.id();
   } else {
-    LOG(INFO) << "create_source() invalid source_id";
-    reply_with_status(CreateSourceResponse::INVALID_SOURCE_ID, reply);
+    LOG(INFO) << "create_dataset() invalid dataset_id";
+    reply_with_status(CreateDatasetResponse::INVALID_DATASET_ID, reply);
     return;
   }
-  LOG(INFO) << "create_source() inserting source (id="
-            << b64encode(source_id)
-            << ", schema='" << source.schema().ShortDebugString() << "')";
+  LOG(INFO) << "create_dataset() inserting dataset (id="
+            << b64encode(dataset_id)
+            << ", schema='" << dataset.schema().ShortDebugString() << "')";
 
-  if (!new_source_id) {
+  if (!new_dataset_id) {
     core::Schema remote_schema;
-    error_condition sql_response = sql_store_.fetch_schema(remote_schema, source_id);
+    error_condition sql_response = sql_store_.fetch_schema(remote_schema, dataset_id);
 
     if (sql_response == SqlErr::OK) {
       if (remote_schema.SerializeAsString() ==
-          source.schema().SerializeAsString()) {
-        // Trying to create a source that already exists with identical schema
+          dataset.schema().SerializeAsString()) {
+        // Trying to create a dataset that already exists with identical schema
         // Nothing to do - send OK such that the call is idempotent
-        CreateSourceResponse response;
-        response.set_status(CreateSourceResponse::OK);
-        response.set_source_id(source_id);
+        CreateDatasetResponse response;
+        response.set_status(CreateDatasetResponse::OK);
+        response.set_dataset_id(dataset_id);
         reply.send(response);
         return;
       } else {
-        LOG(WARNING) << "A source with the same id, but different schema "
-                     << "already exists (source_id="
-                     << b64encode(source_id) << ")";
+        LOG(WARNING) << "A dataset with the same id, but different schema "
+                     << "already exists (dataset_id="
+                     << b64encode(dataset_id) << ")";
         reply_with_status(
-            CreateSourceResponse::SOURCE_ID_ALREADY_EXISTS, reply);
+            CreateDatasetResponse::DATASET_ID_ALREADY_EXISTS, reply);
         return;
       }
-    } else if (sql_response != SqlErr::INVALID_SOURCE_ID) {
-      // It is OK if the source_id does not exist
-      reply_with_status(CreateSourceResponse::NETWORK_ERROR, reply);
+    } else if (sql_response != SqlErr::INVALID_DATASET_ID) {
+      // It is OK if the dataset_id does not exist
+      reply_with_status(CreateDatasetResponse::NETWORK_ERROR, reply);
       return;
     }
   }
-  auto sql_response = sql_store_.create_source(
-      source_id, source.user_id(), source.schema().SerializeAsString(),
-      source.name(), source.private_(), source.frozen());
+  auto sql_response = sql_store_.create_dataset(
+      dataset_id, dataset.user_id(), dataset.schema().SerializeAsString(),
+      dataset.name(), dataset.private_(), dataset.frozen());
 
   if (sql_response == SqlErr::OK) {
     // Store a copy of the schema (which is immutable anyway) in Riak
-    riak::object object(schemas_bucket_, source_id);
-    source.schema().SerializeToString(&object.value());
+    riak::object object(schemas_bucket_, dataset_id);
+    dataset.schema().SerializeToString(&object.value());
     riak_client_.async_store(
-        object, [reply, source_id, this] (const error_code error) mutable {
-          CreateSourceResponse response;
+        object, [reply, dataset_id, this] (const error_code error) mutable {
+          CreateDatasetResponse response;
           auto status = error ?
-              CreateSourceResponse::NETWORK_ERROR : CreateSourceResponse::OK;
-          response.set_source_id(source_id);
+              CreateDatasetResponse::NETWORK_ERROR : CreateDatasetResponse::OK;
+          response.set_dataset_id(dataset_id);
           response.set_status(status);
           reply.send(response);
         });
   } else {
-    CreateSourceResponse response;
+    CreateDatasetResponse response;
     switch (static_cast<SqlErr>(sql_response.value())) {
       case SqlErr::INVALID_USER_ID:
-        response.set_status(CreateSourceResponse::INVALID_USER_ID);
+        response.set_status(CreateDatasetResponse::INVALID_USER_ID);
         break;
-      case SqlErr::DUPLICATE_SOURCE_NAME:
-        response.set_status(CreateSourceResponse::DUPLICATE_SOURCE_NAME);
+      case SqlErr::DUPLICATE_DATASET_NAME:
+        response.set_status(CreateDatasetResponse::DUPLICATE_DATASET_NAME);
         break;
       default:
-        response.set_status(CreateSourceResponse::NETWORK_ERROR);
+        response.set_status(CreateDatasetResponse::NETWORK_ERROR);
     }
     reply.send(response);
   }
 }
 
-/***********                      delete_source                     ***********/
+/***********                      delete_dataset                     ***********/
 
 // TODO: Make sure the actual data is deleted by some job later
-void SaltfishServiceImpl::delete_source(
-    const DeleteSourceRequest& request,
-    rpcz::reply<DeleteSourceResponse> reply) {
-  const string& source_id = request.source_id();
-  if (source_id.size() != SOURCE_ID_WIDTH) {
-    LOG(INFO) << "delete_source() with invalid source_id";
-    reply_with_status(DeleteSourceResponse::INVALID_SOURCE_ID, reply);
+void DatasetStoreImpl::delete_dataset(
+    const DeleteDatasetRequest& request,
+    rpcz::reply<DeleteDatasetResponse> reply) {
+  const string& dataset_id = request.dataset_id();
+  if (dataset_id.size() != DATASET_ID_WIDTH) {
+    LOG(INFO) << "delete_dataset() with invalid dataset_id";
+    reply_with_status(DeleteDatasetResponse::INVALID_DATASET_ID, reply);
     return;
   }
-  VLOG(0) << "delete_source(source_id=" << b64encode(source_id) << ")";
+  VLOG(0) << "delete_dataset(dataset_id=" << b64encode(dataset_id) << ")";
   int rows_updated;
   error_condition sql_response =
-      sql_store_.delete_source(rows_updated, source_id);
+      sql_store_.delete_dataset(rows_updated, dataset_id);
   if (sql_response == SqlErr::OK) {
     CHECK(rows_updated == 0 || rows_updated == 1)
-        << "source_id is a primary key, a max of 1 row can be affected";
+        << "dataset_id is a primary key, a max of 1 row can be affected";
     if (rows_updated == 0) {
-      reply_with_status(DeleteSourceResponse::OK, reply);
+      reply_with_status(DeleteDatasetResponse::OK, reply);
     } else {
       async_call_listeners(
-          RequestType::DELETE_SOURCE, request.SerializeAsString());
-      DeleteSourceResponse response;
-      response.set_status(DeleteSourceResponse::OK);
+          RequestType::DELETE_DATASET, request.SerializeAsString());
+      DeleteDatasetResponse response;
+      response.set_status(DeleteDatasetResponse::OK);
       response.set_updated(true);
       reply.send(response);
       return;
     }
   } else {
-    reply_with_status(DeleteSourceResponse::NETWORK_ERROR, reply);
+    reply_with_status(DeleteDatasetResponse::NETWORK_ERROR, reply);
   }
 }
 
 /***********                       generate_id                      ***********/
 
-void SaltfishServiceImpl::generate_id(
+void DatasetStoreImpl::generate_id(
     const GenerateIdRequest& request,
     rpcz::reply<GenerateIdResponse> reply) {
   VLOG(0) << "generate_id(count=" << request.count() << ")";
   GenerateIdResponse response;
-  if(request.count() < max_generate_id_count_) {
+  if (request.count() < max_generate_id_count_) {
     response.set_status(GenerateIdResponse::OK);
-    for(uint32_t i = 0; i < request.count(); ++i) {
-      response.add_ids(gen_random_string(SOURCE_ID_WIDTH));
+    for (uint32_t i = 0; i < request.count(); ++i) {
+      response.add_ids(gen_random_string(DATASET_ID_WIDTH));
     }
   } else {
     response.set_status(GenerateIdResponse::COUNT_TOO_LARGE);
@@ -337,55 +337,55 @@ void SaltfishServiceImpl::generate_id(
   reply.send(response);
 }
 
-/***********                      get_sources                      ***********/
+/***********                      get_datasets                      ***********/
 
-void SaltfishServiceImpl::get_sources(
-    const GetSourcesRequest& request,
-    rpcz::reply<GetSourcesResponse> reply) {
-  if (request.has_source_id() + request.has_user_id() +
+void DatasetStoreImpl::get_datasets(
+    const GetDatasetsRequest& request,
+    rpcz::reply<GetDatasetsResponse> reply) {
+  if (request.has_dataset_id() + request.has_user_id() +
       request.has_username() != 1) {
-    reply_with_status(GetSourcesResponse::INVALID_REQUEST, reply);
+    reply_with_status(GetDatasetsResponse::INVALID_REQUEST, reply);
     return;
   }
-  if (request.has_source_id()) {
-    GetSourcesResponse response;
-    auto& source_info = *response.add_sources_info();
+  if (request.has_dataset_id()) {
+    GetDatasetsResponse response;
+    auto& dataset_detail = *response.add_datasets();
     error_condition sql_response =
-      sql_store_.get_source_by_id(source_info, request.source_id());
+      sql_store_.get_dataset_by_id(dataset_detail, request.dataset_id());
     if (sql_response == SqlErr::OK) {
-      response.set_status(GetSourcesResponse::OK);
+      response.set_status(GetDatasetsResponse::OK);
       reply.send(response);
       return;
-    } else if(sql_response == SqlErr::INVALID_SOURCE_ID) {
-      reply_with_status(GetSourcesResponse::INVALID_SOURCE_ID, reply);
+    } else if (sql_response == SqlErr::INVALID_DATASET_ID) {
+      reply_with_status(GetDatasetsResponse::INVALID_DATASET_ID, reply);
       return;
     }
   } else {
-    vector<SourceInfo> sources_info;
+    vector<DatasetDetail> datasets_details;
     error_condition sql_response;
     if (request.has_user_id()) {
-      sql_response = sql_store_.get_sources_by_user(
-          sources_info, request.user_id());
+      sql_response = sql_store_.get_datasets_by_user(
+          datasets_details, request.user_id());
     } else {
-      sql_response = sql_store_.get_sources_by_username(
-          sources_info, request.username());
+      sql_response = sql_store_.get_datasets_by_username(
+          datasets_details, request.username());
     }
     if (sql_response == SqlErr::OK) {
-      GetSourcesResponse response;
-      for (auto& source_info : sources_info) {
-        *response.add_sources_info() = source_info;
+      GetDatasetsResponse response;
+      for (auto& dataset_info : datasets_details) {
+        *response.add_datasets() = dataset_info;
       }
-      response.set_status(GetSourcesResponse::OK);
+      response.set_status(GetDatasetsResponse::OK);
       reply.send(response);
       return;
     }
   }
-  reply_with_status(GetSourcesResponse::NETWORK_ERROR, reply);
+  reply_with_status(GetDatasetsResponse::NETWORK_ERROR, reply);
 }
 
 /***********                       put_records                      ***********/
 
-vector<string> SaltfishServiceImpl::ids_for_put_request(
+vector<string> DatasetStoreImpl::ids_for_put_request(
     const PutRecordsRequest& request) {
   vector<string> record_ids;
   for (auto i = 0; i < request.records_size(); ++i) {
@@ -445,15 +445,15 @@ void put_records_get_handler(
 
 }  // namespace
 
-void SaltfishServiceImpl::put_records(
+void DatasetStoreImpl::put_records(
     const PutRecordsRequest& request,
     rpcz::reply<PutRecordsResponse> reply) {
-  const auto& source_id = request.source_id();
+  const auto& dataset_id = request.dataset_id();
   const uint32_t n_records = request.records_size();
-  if (source_id.size() != SOURCE_ID_WIDTH) {
-    VLOG(0) << "Got put_records request with an invalid source id";
-    reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
-                      "The source id provided is invalid.");
+  if (dataset_id.size() != DATASET_ID_WIDTH) {
+    VLOG(0) << "Got put_records request with an invalid dataset id";
+    reply_with_status(PutRecordsResponse::INVALID_DATASET_ID, reply,
+                      "The dataset id provided is invalid.");
     return;
   } else  if (n_records == 0) {
     VLOG(0) << "Empty put_records request";
@@ -461,21 +461,21 @@ void SaltfishServiceImpl::put_records(
     return;
   }
   core::Schema schema;
-  error_condition sql_response = sql_store_.fetch_schema(schema, source_id);
-  if (sql_response == SqlErr::INVALID_SOURCE_ID) {
-    VLOG(0) << "Received put_records request for non-existent source; id="
-            << b64encode(source_id);
+  error_condition sql_response = sql_store_.fetch_schema(schema, dataset_id);
+  if (sql_response == SqlErr::INVALID_DATASET_ID) {
+    VLOG(0) << "Received put_records request for non-existent dataset; id="
+            << b64encode(dataset_id);
     stringstream msg;
-    msg << "Trying to put records into non-existent source (id="
-        << b64encode(source_id) << ")";
-    reply_with_status(PutRecordsResponse::INVALID_SOURCE_ID, reply,
+    msg << "Trying to put records into non-existent dataset (id="
+        << b64encode(dataset_id) << ")";
+    reply_with_status(PutRecordsResponse::INVALID_DATASET_ID, reply,
                       msg.str().c_str());
     return;
   } else if (sql_response != SqlErr::OK) {
     reply_with_status(PutRecordsResponse::NETWORK_ERROR, reply);
     return;
   }
-  for(uint32_t ix = 0; ix < n_records; ++ix) {
+  for (uint32_t ix = 0; ix < n_records; ++ix) {
     if (auto err = check_record(schema, request.records(ix).record())) {
       stringstream msg;
       msg << "At position " << ix << ": " << err.what();
@@ -494,7 +494,7 @@ void SaltfishServiceImpl::put_records(
     reply.send(response);
   };
   stringstream bucket_ss;
-  bucket_ss << sources_data_bucket_prefix_ << b64encode(source_id);
+  bucket_ss << records_bucket_prefix_ << b64encode(dataset_id);
   string bucket{bucket_ss.str()};
 
   auto replier = make_shared<ReplySync>(request.records_size(), reply_success);

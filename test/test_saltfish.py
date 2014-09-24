@@ -26,11 +26,11 @@ from reinferio.store import SqlStore
 from reinferio import core_pb2
 from reinferio import saltfish_pb2
 from reinferio.saltfish_pb2 import \
-    CreateSourceRequest, CreateSourceResponse, \
-    DeleteSourceRequest, DeleteSourceResponse, \
+    CreateDatasetRequest, CreateDatasetResponse, \
+    DeleteDatasetRequest, DeleteDatasetResponse, \
     GenerateIdRequest,   GenerateIdResponse, \
     PutRecordsRequest,   PutRecordsResponse, \
-    GetSourcesRequest, GetSourcesResponse
+    GetDatasetsRequest, GetDatasetsResponse
 
 
 PROTO_ROOT = join('..', 'src', 'proto')
@@ -38,7 +38,7 @@ DEFAULT_CONNECT = 'tcp://localhost:5555'
 DEFAULT_RIAK_HOST = 'localhost'
 DEFAULT_RIAK_PORT = 8087
 
-SOURCE_ID_BYTES = 24
+DATASET_ID_BYTES = 24
 RANDOM_INDEX = 'randomindex_int'
 
 TEST_PASSED = '*** OK ***'
@@ -54,20 +54,20 @@ compiler.generate_proto(join(PROTO_ROOT, 'config.proto'), '.')
 import config_pb2
 
 
-def make_create_source_req(
-        source_id=None, user_id=None, name=None, features=None,
+def make_create_dataset_req(
+        dataset_id=None, user_id=None, name=None, features=None,
         private=True, frozen=False):
     features = features or []
-    request = CreateSourceRequest()
-    if source_id:  request.source.source_id = source_id
-    if user_id:  request.source.user_id = user_id
-    if name:  request.source.name = name
+    request = CreateDatasetRequest()
+    if dataset_id:  request.dataset.id = dataset_id
+    if user_id:  request.dataset.user_id = user_id
+    if name:  request.dataset.name = name
     for f in features:
-        new_feat = request.source.schema.features.add()
+        new_feat = request.dataset.schema.features.add()
         if 'name' in f:  new_feat.name = f['name']
-        if 'type' in f:  new_feat.feature_type = f['type']
-    request.source.private = private
-    request.source.frozen = frozen
+        if 'type' in f:  new_feat.type = f['type']
+    request.dataset.private = private
+    request.dataset.frozen = frozen
     return request
 
 
@@ -75,18 +75,18 @@ def filter_by_type(seq, typ):
     return filter(lambda val: isinstance(val, typ), seq)
 
 
-def make_put_records_req(source_id, records=None, record_ids=None):
+def make_put_records_req(dataset_id, records=None, record_ids=None):
     records = records or []
     record_ids = record_ids or [None] * len(records)
     assert len(records) == len(record_ids)
     request = PutRecordsRequest()
-    request.source_id = str(source_id)
+    request.dataset_id = str(dataset_id)
     for i in xrange(len(records)):
         tagged = request.records.add()
         if record_ids[i]:
             tagged.record.record_id = record_ids[i]
-        tagged.record.reals.extend(filter_by_type(records[i], float))
-        tagged.record.cats.extend(filter_by_type(records[i], str))
+        tagged.record.numericals.extend(filter_by_type(records[i], float))
+        tagged.record.categoricals.extend(filter_by_type(records[i], str))
     return request
 
 
@@ -94,9 +94,9 @@ def bytes_to_int64(int_str):
     return struct.unpack("<q", int_str)[0]
 
 
-def valid_source_id(source_id):
-    return isinstance(source_id, basestring) \
-        and len(source_id) == SOURCE_ID_BYTES
+def valid_dataset_id(dataset_id):
+    return isinstance(dataset_id, basestring) \
+        and len(dataset_id) == DATASET_ID_BYTES
 
 
 def parse_schema(schema_str):
@@ -125,7 +125,7 @@ class SaltfishTests(unittest.TestCase):
     def setUpClass(cls):
         cls._app = rpcz.Application()
         cls._channel = cls._app.create_rpc_channel(cls._config.bind_str)
-        cls._service = saltfish_pb2.SourceManagerService_Stub(cls._channel)
+        cls._service = saltfish_pb2.DatasetStore_Stub(cls._channel)
         cls._riakc = riak.RiakClient(
             protocol='pbc',
             host=cls._config.riak.host,
@@ -158,18 +158,18 @@ class SaltfishTests(unittest.TestCase):
         pass
 
     @classmethod
-    def get_sources(cls, source_id=None, user_id=None, username=None):
+    def get_datasets(cls, dataset_id=None, user_id=None, username=None):
         SELECT_LIST_SOURCES = """
         SELECT source_id, user_id, source_schema, name, private, frozen,
          created, username, email FROM list_sources WHERE """
-        args = [source_id, user_id, username]
+        args = [dataset_id, user_id, username]
         assert sum(map(lambda x: x is not None, args)) == 1
 
         conn = cls._sql.check_out_connection()
         assert conn is not None
         cur = conn.cursor()
-        if source_id is not None:
-            cur.execute(SELECT_LIST_SOURCES + 'source_id=%s', (source_id,))
+        if dataset_id is not None:
+            cur.execute(SELECT_LIST_SOURCES + 'source_id=%s', (dataset_id,))
         elif user_id is not None:
             cur.execute(SELECT_LIST_SOURCES + 'user_id=%s', (user_id,))
         elif username is not None:
@@ -180,7 +180,7 @@ class SaltfishTests(unittest.TestCase):
         cls._sql.check_in_connection(conn)
 
         if len(sources) == 0:
-            if source_id is not None:
+            if dataset_id is not None:
                 return None
             else:
                 if cls._sql.get_user(
@@ -196,9 +196,9 @@ class SaltfishTests(unittest.TestCase):
 
     def setUp(self):
         self._features = [
-            {'name': 'timestamp_ms', 'type': core_pb2.Feature.REAL},
-            {'name': 'return', 'type': core_pb2.Feature.REAL},
-            {'name': 'logvol', 'type': core_pb2.Feature.REAL},
+            {'name': 'timestamp_ms', 'type': core_pb2.Feature.NUMERICAL},
+            {'name': 'return', 'type': core_pb2.Feature.NUMERICAL},
+            {'name': 'logvol', 'type': core_pb2.Feature.NUMERICAL},
             {'name': 'sector', 'type': core_pb2.Feature.CATEGORICAL}
         ]
         self._records = [
@@ -213,11 +213,11 @@ class SaltfishTests(unittest.TestCase):
             [1002.40, -1.14, 6156., 'cons disc'],
         ]
 
-    def verify_created_source(self, source_id, request):
-        self.assertTrue(valid_source_id(source_id))
+    def verify_created_dataset(self, dataset_id, request):
+        self.assertTrue(valid_dataset_id(dataset_id))
 
         cls = self.__class__
-        remote = cls.get_sources(source_id=source_id)
+        remote = cls.get_datasets(dataset_id=dataset_id)
         self.assertIsNotNone(remote)
         self.assertEqual(1, len(remote))
         remote = remote[0]
@@ -225,188 +225,187 @@ class SaltfishTests(unittest.TestCase):
         # Also get the schema cached in Riak:
         cached = cls._riakc \
                     .bucket(cls._config.schemas_bucket) \
-                    .get(BinaryString(source_id))
+                    .get(BinaryString(dataset_id))
         self.assertNotEqual(
             cached.encoded_data, '',
-            "The schema had not been cached in Riak b=%s k=%s (=source_id)" %
-            (cls._config.schemas_bucket, b64encode(source_id)))
+            "The schema had not been cached in Riak b=%s k=%s (=dataset_id)" %
+            (cls._config.schemas_bucket, b64encode(dataset_id)))
 
         cached_schema = core_pb2.Schema()
         cached_schema.ParseFromString(cached.encoded_data)
 
         self.assertEqual(remote.source_schema, cached_schema)
-        if valid_source_id(request.source.source_id):
-            self.assertEqual(request.source.source_id, remote.source_id)
-        self.assertEqual(request.source.user_id, remote.user_id)
-        self.assertEqual(request.source.name, remote.name)
-        self.assertEqual(request.source.schema.features,
+        if valid_dataset_id(request.dataset.id):
+            self.assertEqual(request.dataset.id, remote.source_id)
+        self.assertEqual(request.dataset.user_id, remote.user_id)
+        self.assertEqual(request.dataset.name, remote.name)
+        self.assertEqual(request.dataset.schema.features,
                          remote.source_schema.features)
-        self.assertEqual(request.source.private, remote.private)
-        self.assertEqual(request.source.frozen, remote.frozen)
+        self.assertEqual(request.dataset.private, remote.private)
+        self.assertEqual(request.dataset.frozen, remote.frozen)
 
-    def try_create_source(self, request):
-        response = self._service.create_source(
+    def try_create_dataset(self, request):
+        response = self._service.create_dataset(
             request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(CreateSourceResponse.OK, response.status)
-        source_id = response.source_id
-        print(source_id, b64encode(source_id))
+        self.assertEqual(CreateDatasetResponse.OK, response.status)
+        dataset_id = response.dataset_id
 
-        self.verify_created_source(source_id, request)
-        if request.source.source_id:
-            self.assertEqual(request.source.source_id, response.source_id)
+        self.verify_created_dataset(dataset_id, request)
+        if request.dataset.id:
+            self.assertEqual(request.dataset.id, response.dataset_id)
         else:
-            request.source.source_id = source_id
+            request.dataset.id = dataset_id
 
         log.info('Sending a 2nd identical request to check '
-                 'idempotency (source_id=%s)' % b64encode(source_id))
-        response2 = self._service.create_source(
+                 'idempotency (dataset_id=%s)' % b64encode(dataset_id))
+        response2 = self._service.create_dataset(
             request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(CreateSourceResponse.OK, response2.status)
-        self.verify_created_source(source_id, request)
+        self.assertEqual(CreateDatasetResponse.OK, response2.status)
+        self.verify_created_dataset(dataset_id, request)
 
         log.info('Trying same id, but different schema. ' \
-                 'Error expected (source_id=%s)' % b64encode(source_id))
+                 'Error expected (dataset_id=%s)' % b64encode(dataset_id))
         features = deepcopy(self._features)
         features[1]['type'] = core_pb2.Feature.CATEGORICAL
-        request3 = make_create_source_req(
-            source_id, request.source.user_id, request.source.name, features)
-        response3 = self._service.create_source(
+        request3 = make_create_dataset_req(
+            dataset_id, request.dataset.user_id, request.dataset.name, features)
+        response3 = self._service.create_dataset(
             request3, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(CreateSourceResponse.SOURCE_ID_ALREADY_EXISTS,
+        self.assertEqual(CreateDatasetResponse.DATASET_ID_ALREADY_EXISTS,
                          response3.status)
         log.info('Got error message: "%s"' % response3.msg)
         return response
 
-    def try_delete_source(self, source_id):
-        request = DeleteSourceRequest()
-        request.source_id = source_id
-        response = self._service.delete_source(
+    def try_delete_dataset(self, dataset_id):
+        request = DeleteDatasetRequest()
+        request.dataset_id = dataset_id
+        response = self._service.delete_dataset(
             request, deadline_ms=DEFAULT_DEADLINE)
         return response
 
     ### Test functions ###
-    def test_create_source_with_given_source_id(self):
-        source_id = os.urandom(SOURCE_ID_BYTES)
+    def test_create_dataset_with_given_id(self):
+        dataset_id = os.urandom(DATASET_ID_BYTES)
         user_id = self.__class__._user_id1
-        source_name = ur"Some Test Source-123客\x00家話\\;"
-        request = make_create_source_req(
-            source_id, user_id, source_name, self._features)
-        log.info('Creating a new source with a given id (id=%s)..' %
-                 b64encode(source_id))
-        self.try_create_source(request)
+        dataset_name = ur"Some Test Dataset-123客\x00家話\\;"
+        request = make_create_dataset_req(
+            dataset_id, user_id, dataset_name, self._features)
+        log.info('Creating a new dataset with a given id (id=%s)..' %
+                 b64encode(dataset_id))
+        self.try_create_dataset(request)
 
-    def test_create_source_with_no_source_id(self):
+    def test_create_dataset_without_given_id(self):
         user_id = self.__class__._user_id2
-        source_name = u"Some Other Source 客家 話 -- £$"
-        request = make_create_source_req(
-            user_id=user_id, name=source_name, features=self._features)
-        log.info('Creating a new source without setting the id..')
-        self.try_create_source(request)
+        dataset_name = u"Some Other Dataset 客家 話 -- £$"
+        request = make_create_dataset_req(
+            user_id=user_id, name=dataset_name, features=self._features)
+        log.info('Creating a new dataset without setting the id..')
+        self.try_create_dataset(request)
 
-    def test_create_source_with_invalid_user_id(self):
+    def test_create_dataset_with_invalid_user_id(self):
         user_id = 1
-        source_name = u"Source 123"
-        request = make_create_source_req(
-            user_id=user_id, name=source_name, features=self._features)
-        log.info("Creating source with an invalid user_id. Error expected")
-        response = self._service.create_source(
+        dataset_name = u"Dataset 123"
+        request = make_create_dataset_req(
+            user_id=user_id, name=dataset_name, features=self._features)
+        log.info("Creating dataset with an invalid user_id. Error expected")
+        response = self._service.create_dataset(
             request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(CreateSourceResponse.INVALID_USER_ID, response.status)
+        self.assertEqual(CreateDatasetResponse.INVALID_USER_ID, response.status)
         log.info('Got error message: "%s"' % response.msg)
-        self.assertIsNone(self.__class__.get_sources(response.source_id))
+        self.assertIsNone(self.__class__.get_datasets(response.dataset_id))
 
-    def test_create_source_duplicate_feature_name(self):
+    def test_create_dataset_duplicate_feature_name(self):
         user_id = self.__class__._user_id2
-        source_id = os.urandom(SOURCE_ID_BYTES)
+        dataset_id = os.urandom(DATASET_ID_BYTES)
         self._features.append(self._features[0])
-        request = make_create_source_req(source_id, user_id,
-                                         features=self._features)
-        log.info("Creating source with duplicate feature name in schema." \
+        request = make_create_dataset_req(
+            dataset_id, user_id, features=self._features)
+        log.info("Creating dataset with duplicate feature name in schema." \
                  " Error expected")
-        response = self._service.create_source(
+        response = self._service.create_dataset(
             request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(CreateSourceResponse.DUPLICATE_FEATURE_NAME,
+        self.assertEqual(CreateDatasetResponse.DUPLICATE_FEATURE_NAME,
                          response.status)
         log.info('Got error message: "%s"' % response.msg)
-        self.assertIsNone(self.__class__.get_sources(source_id))
+        self.assertIsNone(self.__class__.get_datasets(dataset_id))
 
-    def test_create_source_with_invalid_feature_type(self):
+    def test_create_dataset_with_invalid_feature_type(self):
         user_id = self.__class__._user_id1
         features = self._features
         for feat in features:
             del feat['type']
-        request = make_create_source_req(
-            user_id=user_id, name="Source with invalid feature types",
+        request = make_create_dataset_req(
+            user_id=user_id, name="Dataset with invalid feature types",
             features=features)
-        log.info("Creating source with invalid features in schema." \
+        log.info("Creating dataset with invalid features in schema." \
                  " Error expected")
 
-        response = self._service.create_source(
+        response = self._service.create_dataset(
             request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(CreateSourceResponse.INVALID_FEATURE_TYPE,
+        self.assertEqual(CreateDatasetResponse.INVALID_FEATURE_TYPE,
                          response.status)
 
-    def test_create_source_two_sources_same_name(self):
+    def test_create_dataset_two_datasets_same_name(self):
         user_id = self.__class__._user_id1
-        source_name = u"iris-dataset"
-        source_id1 = os.urandom(SOURCE_ID_BYTES)
-        source_id2 = os.urandom(SOURCE_ID_BYTES)
+        dataset_name = u"iris-dataset"
+        dataset_id1 = os.urandom(DATASET_ID_BYTES)
+        dataset_id2 = os.urandom(DATASET_ID_BYTES)
 
-        # Only the source ids differ:
-        request1 = make_create_source_req(
-            source_id=source_id1, user_id=user_id,
-            name=source_name, features=self._features)
-        request2 = make_create_source_req(
-            source_id=source_id2, user_id=user_id,
-            name=source_name, features=self._features)
+        # Only the dataset ids differ:
+        request1 = make_create_dataset_req(
+            dataset_id=dataset_id1, user_id=user_id,
+            name=dataset_name, features=self._features)
+        request2 = make_create_dataset_req(
+            dataset_id=dataset_id2, user_id=user_id,
+            name=dataset_name, features=self._features)
 
-        log.info('Trying to create 2 sources with the same name for the same '
+        log.info('Trying to create 2 datasets with the same name for the same '
                  ' user. Error expected')
-        self.try_create_source(request1)
-        response = self._service.create_source(
+        self.try_create_dataset(request1)
+        response = self._service.create_dataset(
             request2, deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(
-            CreateSourceResponse.DUPLICATE_SOURCE_NAME, response.status)
+            CreateDatasetResponse.DUPLICATE_DATASET_NAME, response.status)
         log.info('Got error message: "%s"' % response.msg)
 
-    def test_delete_source(self):
+    def test_delete_dataset(self):
         user_id = self.__class__._user_id1
-        create_request = make_create_source_req(
+        create_request = make_create_dataset_req(
             user_id=user_id, features=self._features)
-        delete_request = DeleteSourceRequest()
-        log.info('Creating a source in order to delete it..')
-        create_response = self._service.create_source(
+        delete_request = DeleteDatasetRequest()
+        log.info('Creating a dataset in order to delete it..')
+        create_response = self._service.create_dataset(
             create_request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(CreateSourceResponse.OK, create_response.status)
-        source_id = create_response.source_id
-        self.assertIsNotNone(self.__class__.get_sources(source_id))
+        self.assertEqual(CreateDatasetResponse.OK, create_response.status)
+        dataset_id = create_response.dataset_id
+        self.assertIsNotNone(self.__class__.get_datasets(dataset_id))
 
-        log.info('Deleting the just created source with id=%s'
-                 % b64encode(source_id))
-        delete_request.source_id = source_id
-        delete_response = self._service.delete_source(
+        log.info('Deleting the just created dataset with id=%s'
+                 % b64encode(dataset_id))
+        delete_request.dataset_id = dataset_id
+        delete_response = self._service.delete_dataset(
             delete_request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(DeleteSourceResponse.OK, delete_response.status)
+        self.assertEqual(DeleteDatasetResponse.OK, delete_response.status)
         self.assertEqual(True, delete_response.updated)
-        self.assertIsNone(self.__class__.get_sources(source_id))
+        self.assertIsNone(self.__class__.get_datasets(dataset_id))
 
-        log.info('Making a 2nd identical delete_source call '
-                 'to check idempotency (source_id=%s)'  % b64encode(source_id))
-        delete_response = self._service.delete_source(
+        log.info('Making a 2nd identical delete_dataset call '
+                 'to check idempotency (dataset_id=%s)'  % b64encode(dataset_id))
+        delete_response = self._service.delete_dataset(
             delete_request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(DeleteSourceResponse.OK, delete_response.status)
+        self.assertEqual(DeleteDatasetResponse.OK, delete_response.status)
         self.assertEqual(False, delete_response.updated)
-        self.assertIsNone(self.__class__.get_sources(source_id))
+        self.assertIsNone(self.__class__.get_datasets(dataset_id))
 
-    def test_delete_source_invalid_ids(self):
+    def test_delete_dataset_invalid_ids(self):
         log.info('Sending delete_request with invalid ids. Errors expected')
-        response = self.try_delete_source("invalid\x00\x01\x02")
-        self.assertEqual(DeleteSourceResponse.INVALID_SOURCE_ID,
+        response = self.try_delete_dataset("invalid\x00\x01\x02")
+        self.assertEqual(DeleteDatasetResponse.INVALID_DATASET_ID,
                          response.status)
         log.info('id too short - error message: "%s"' % response.msg)
 
-        response2 = self.try_delete_source("")
-        self.assertEqual(DeleteSourceResponse.INVALID_SOURCE_ID,
+        response2 = self.try_delete_dataset("")
+        self.assertEqual(DeleteDatasetResponse.INVALID_DATASET_ID,
                          response2.status)
         log.info('id empty str - error message: "%s"' % response2.msg)
 
@@ -433,13 +432,13 @@ class SaltfishTests(unittest.TestCase):
         self.assertEqual(0, len(response.ids))
         log.info('Got error message: "%s"' % response.msg)
 
-    def _ensure_source(self, source_id=None, user_id=None,
+    def _ensure_dataset(self, dataset_id=None, user_id=None,
                        name=None, features=None):
-        create_req = make_create_source_req(
-            source_id, user_id, name, features)
-        create_resp = self._service.create_source(
+        create_req = make_create_dataset_req(
+            dataset_id, user_id, name, features)
+        create_resp = self._service.create_dataset(
             create_req, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(CreateSourceResponse.OK, create_resp.status)
+        self.assertEqual(CreateDatasetResponse.OK, create_resp.status)
         return create_resp
 
     def _check_record_indexes(self, indexes):
@@ -449,20 +448,21 @@ class SaltfishTests(unittest.TestCase):
             lambda index: index[0] == RANDOM_INDEX, indexes)[0][1]
         self.assertLess(random_index_value, config.max_random_index)
 
-    def test_put_records_with_new_source(self):
-        log.info('Creating a source where the records will be inserted..')
-        source_id = self._ensure_source(user_id=self.__class__._user_id1,
-                                        features=self._features).source_id
+    def test_put_records_with_new_dataset(self):
+        log.info('Creating a dataset where the records will be inserted..')
+        response = self._ensure_dataset(
+            user_id=self.__class__._user_id1, features=self._features)
+        dataset_id = response.dataset_id
 
-        log.info('Inserting %d records into newly created source (id=%s)' %
-                     (len(self._records), b64encode(source_id)))
-        put_req = make_put_records_req(source_id, records=self._records)
+        log.info('Inserting %d records into newly created dataset (id=%s)' %
+                     (len(self._records), b64encode(dataset_id)))
+        put_req = make_put_records_req(dataset_id, records=self._records)
         put_resp = self._service.put_records(put_req,
                                              deadline_ms=DEFAULT_DEADLINE)
         self.assertEqual(PutRecordsResponse.OK, put_resp.status)
         self.assertEqual(len(self._records), len(put_resp.record_ids))
-        bucket = self.__class__._config.sources_data_bucket_prefix + \
-                 b64encode(source_id)
+        bucket = self.__class__._config.records_bucket_prefix + \
+                 b64encode(dataset_id)
 
         for i, record_id in enumerate(put_resp.record_ids):
             self.assertEqual(8, len(record_id))  # record_ids are int64_t
@@ -478,102 +478,92 @@ class SaltfishTests(unittest.TestCase):
             record.ParseFromString(remote.encoded_data)
             self.assertEqual(put_req.records[i].record, record)
 
-    def test_put_records_with_nonexistent_source(self):
-        source_id = os.urandom(SOURCE_ID_BYTES)
-        log.info('Inserting %d records into a non-exsistent source (id=%s)' \
-                 ' Error expected' % (len(self._records), b64encode(source_id)))
-        request = make_put_records_req(source_id, records=self._records)
+    def test_put_records_with_nonexistent_dataset(self):
+        dataset_id = os.urandom(DATASET_ID_BYTES)
+        log.info('Inserting %d records into a non-exsistent dataset (id=%s)' \
+                 ' Error expected' % (len(self._records), b64encode(dataset_id)))
+        request = make_put_records_req(dataset_id, records=self._records)
         response = self._service.put_records(request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(PutRecordsResponse.INVALID_SOURCE_ID, response.status)
+        self.assertEqual(PutRecordsResponse.INVALID_DATASET_ID, response.status)
         self.assertEqual(0, len(response.record_ids))
         log.info('Got error message: "%s"' % response.msg)
 
-    def _make_some_sources(self, user_id, source_names):
+    def _make_some_datasets(self, user_id, dataset_names):
         create_reqs = {}
-        for i, name in enumerate(source_names):
-            request = make_create_source_req(
+        for i, name in enumerate(dataset_names):
+            request = make_create_dataset_req(
                 name=name, user_id=user_id, features=self._features,
                 private=(i % 2 == 0), frozen=(i % 3 == 0))
-            log.info('Creating source "%s" for user_id=%d'
+            log.info('Creating dataset "%s" for user_id=%d'
                      % (name, user_id))
-            response = self._service.create_source(
+            response = self._service.create_dataset(
                 request, deadline_ms=DEFAULT_DEADLINE)
-            self.assertEqual(CreateSourceResponse.OK, response.status)
-            self.verify_created_source(response.source_id, request)
-            create_reqs[response.source_id] = request
+            self.assertEqual(CreateDatasetResponse.OK, response.status)
+            self.verify_created_dataset(response.dataset_id, request)
+            create_reqs[response.dataset_id] = request
         return create_reqs
 
-    def test_get_sources_invalid_request(self):
-        request = GetSourcesRequest()
-        response = self._service.get_sources(
+    def test_get_datasets_invalid_request(self):
+        request = GetDatasetsRequest()
+        response = self._service.get_datasets(
             request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(GetSourcesResponse.INVALID_REQUEST, response.status)
+        self.assertEqual(GetDatasetsResponse.INVALID_REQUEST, response.status)
 
-        request2 = GetSourcesRequest()
+        request2 = GetDatasetsRequest()
         request2.user_id = 1001
         request2.username = "test"
-        response2 = self._service.get_sources(
+        response2 = self._service.get_datasets(
             request2, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(GetSourcesResponse.INVALID_REQUEST, response2.status)
+        self.assertEqual(GetDatasetsResponse.INVALID_REQUEST, response2.status)
 
-    def assert_get_sources_with_request(
+    def assert_get_datasets_with_request(
             self, username, email, create_reqs, request):
-        response = self._service.get_sources(
+        response = self._service.get_datasets(
             request, deadline_ms=DEFAULT_DEADLINE)
-        self.assertEqual(GetSourcesResponse.OK, response.status)
-        self.assertEqual(len(create_reqs), len(response.sources_info))
+        self.assertEqual(GetDatasetsResponse.OK, response.status)
+        self.assertEqual(len(create_reqs), len(response.datasets))
 
-        source_ids = set(create_reqs.keys())
-        for source_info in response.sources_info:
-            source = source_info.source
+        dataset_ids = set(create_reqs.keys())
+        for dataset_detail in response.datasets:
+            dataset = dataset_detail.dataset
             self.assertIn(
-                source.source_id, source_ids,
-                "A source with id=%s was returned by list_sources"
-                " for although it was not created in the test;"
-                " remaining expected source_ids=%s"
-                % (b64encode(source.source_id), map(b64encode, source_ids)))
-            source_id = source.source_id
-            request = create_reqs[source_id]
-            self.verify_created_source(source_id, request)
-            self.assertEqual(username, source_info.username)
-            self.assertEqual(email, source_info.email)
-            source_ids.remove(source.source_id)
+                dataset.id, dataset_ids,
+                "A dataset with id=%s was returned by get_datasets"
+                " although it was not created in the test;"
+                " remaining expected dataset_ids=%s"
+                % (b64encode(dataset.id), map(b64encode, dataset_ids)))
+            dataset_id = dataset.id
+            request = create_reqs[dataset_id]
+            self.verify_created_dataset(dataset_id, request)
+            self.assertEqual(username, dataset_detail.username)
+            self.assertEqual(email, dataset_detail.email)
+            dataset_ids.remove(dataset.id)
 
-            # Check that the same result is obtained using the source's id:
-            req_by_id = GetSourcesRequest()
-            req_by_id.source_id = source_id
-            resp_by_id = self._service.get_sources(
+            # Check that the same result is obtained using the dataset id:
+            req_by_id = GetDatasetsRequest()
+            req_by_id.dataset_id = dataset_id
+            resp_by_id = self._service.get_datasets(
                 req_by_id, deadline_ms=DEFAULT_DEADLINE)
-            self.assertEqual(GetSourcesResponse.OK, resp_by_id.status)
-            self.assertEqual(1, len(resp_by_id.sources_info))
-            self.assertEqual(source_info, resp_by_id.sources_info[0])
+            self.assertEqual(GetDatasetsResponse.OK, resp_by_id.status)
+            self.assertEqual(1, len(resp_by_id.datasets))
+            self.assertEqual(dataset_detail, resp_by_id.datasets[0])
 
-    def test_get_sources(self):
+    def test_get_datasets(self):
         username, email = 'list', 'list@test.io'
         user_id = self.__class__._sql.create_user(
             username, email, 'qwerty', False)
-        source_names = ['src1', 'src2', 'src3'];
-        create_reqs = self._make_some_sources(user_id, source_names)
+        dataset_names = ['src1', 'src2', 'src3'];
+        create_reqs = self._make_some_datasets(user_id, dataset_names)
 
-        request = GetSourcesRequest()
+        request = GetDatasetsRequest()
         request.user_id = user_id
-        self.assert_get_sources_with_request(
+        self.assert_get_datasets_with_request(
             username, email, create_reqs, request)
 
-        request2 = GetSourcesRequest()
+        request2 = GetDatasetsRequest()
         request2.username = username
-        self.assert_get_sources_with_request(
+        self.assert_get_datasets_with_request(
             username, email, create_reqs, request2)
-
-    @unittest.skip("")
-    def test_rabbitmq_publisher(self):
-        request = CreateSourceRequest()
-        for f in self._features:
-            new_feat = request.source.schema.features.add()
-            new_feat.name = f['name']
-            new_feat.feature_type = f['type']
-        response = self._service.create_source(request,
-                                               deadline_ms=DEFAULT_DEADLINE)
 
 
 if __name__ == '__main__':

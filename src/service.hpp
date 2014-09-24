@@ -22,42 +22,35 @@ class client;
 
 namespace reinferio { namespace saltfish {
 
-class SaltfishService : public SourceManagerService {
+class DatasetStoreImpl : public DatasetStore {
  public:
-  using Listener = std::function<void(RequestType req_type,
-                                      const std::string&)>;
-
-  virtual void register_listener(RequestType req_type,
-                                 const Listener& listener) = 0;
-};
-
-class SaltfishServiceImpl : public SaltfishService {
- public:
-  SaltfishServiceImpl(
+    using Listener = std::function<void(RequestType req_type,
+                                        const std::string&)>;
+  DatasetStoreImpl(
       riak::client& riak_client,
       store::MetadataSqlStoreTasklet& sql_store,
       boost::asio::io_service& ios,
       uint32_t max_generate_id_count,
-      const std::string& sources_data_bucket_prefix,
+      const std::string& records_bucket_prefix,
       const std::string& schemas_bucket,
       const uint64_t max_random_index);
 
-  SaltfishServiceImpl(const SaltfishServiceImpl&) = delete;
-  SaltfishServiceImpl& operator=(const SaltfishServiceImpl&) = delete;
+  DatasetStoreImpl(const DatasetStoreImpl&) = delete;
+  DatasetStoreImpl& operator=(const DatasetStoreImpl&) = delete;
 
-  virtual void create_source(const CreateSourceRequest& request,
-                             rpcz::reply<CreateSourceResponse> reply) override;
-  virtual void delete_source(const DeleteSourceRequest& request,
-                             rpcz::reply<DeleteSourceResponse> reply) override;
+  virtual void create_dataset(const CreateDatasetRequest& request,
+                             rpcz::reply<CreateDatasetResponse> reply) override;
+  virtual void delete_dataset(const DeleteDatasetRequest& request,
+                             rpcz::reply<DeleteDatasetResponse> reply) override;
   virtual void generate_id(const GenerateIdRequest& request,
                            rpcz::reply<GenerateIdResponse> reply) override;
-  virtual void get_sources(const GetSourcesRequest& request,
-                            rpcz::reply<GetSourcesResponse> reply) override;
+  virtual void get_datasets(const GetDatasetsRequest& request,
+                            rpcz::reply<GetDatasetsResponse> reply) override;
   virtual void put_records(const PutRecordsRequest& request,
                            rpcz::reply<PutRecordsResponse> reply) override;
 
   virtual void register_listener(RequestType req_type,
-                                 const Listener& listener) override {
+                                 const Listener& listener) {
     listeners_.emplace_back(req_type, listener, ios_);
   }
  private:
@@ -81,7 +74,7 @@ class SaltfishServiceImpl : public SaltfishService {
   boost::asio::io_service& ios_;
 
   uint32_t max_generate_id_count_;
-  const std::string sources_data_bucket_prefix_;
+  const std::string records_bucket_prefix_;
   const std::string schemas_bucket_;
   const uint64_t max_random_index_;
 

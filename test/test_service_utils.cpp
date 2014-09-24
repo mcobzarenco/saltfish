@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <iostream>
 #include <memory>
+#include <string>
 #include <thread>
 #include <unordered_set>
 #include <utility>
@@ -57,26 +58,26 @@ TEST(SchemaHasDuplicatesTest, EmptyNoDupsAndDups) {
   core::Feature* feat{nullptr};
   feat = schema.add_features();
   feat->set_name("feature_1");
-  feat->set_feature_type(core::Feature::REAL);
+  feat->set_type(core::Feature::NUMERICAL);
   EXPECT_FALSE(saltfish::schema_has_duplicates(schema))
           << "there are no duplicates";
 
   feat = schema.add_features();
   feat->set_name("feature_2");
-  feat->set_feature_type(core::Feature::REAL);
+  feat->set_type(core::Feature::NUMERICAL);
   EXPECT_FALSE(saltfish::schema_has_duplicates(schema))
           << "there are no duplicates";
 
   feat = schema.add_features();
   feat->set_name("feature_3");
-  feat->set_feature_type(core::Feature::CATEGORICAL);
+  feat->set_type(core::Feature::CATEGORICAL);
   EXPECT_FALSE(saltfish::schema_has_duplicates(schema))
       << "there are no duplicates";
 
   // Adding a duplicate feature now
   feat = schema.add_features();
   feat->set_name("feature_1");
-  feat->set_feature_type(core::Feature::CATEGORICAL);
+  feat->set_type(core::Feature::CATEGORICAL);
   EXPECT_TRUE(saltfish::schema_has_duplicates(schema))
       << "feature_1 is duplicated";
 }
@@ -89,23 +90,23 @@ TEST(SchemaHasInvalidFeatures, ValidAndInvalidFeatures) {
   core::Feature* feat{nullptr};
   feat = schema.add_features();
   feat->set_name("feature_1");
-  feat->set_feature_type(core::Feature::REAL);
+  feat->set_type(core::Feature::NUMERICAL);
   EXPECT_FALSE(saltfish::schema_has_invalid_features(schema))
       << "there are no  invalid features";
 
   feat = schema.add_features();
   feat->set_name("feature_2");
-  feat->set_feature_type(core::Feature::TEXT);
+  feat->set_type(core::Feature::TEXT);
   EXPECT_FALSE(saltfish::schema_has_invalid_features(schema))
       << "there are no invalid features";
 
   feat = schema.add_features();
   feat->set_name("feature_3");
-  feat->set_feature_type(core::Feature::INVALID);
+  feat->set_type(core::Feature::INVALID);
 
   feat = schema.add_features();
   feat->set_name("feature_4");
-  feat->set_feature_type(core::Feature::CATEGORICAL);
+  feat->set_type(core::Feature::CATEGORICAL);
   EXPECT_TRUE(saltfish::schema_has_invalid_features(schema))
       << "feature_3 is invalid";
 }
@@ -116,16 +117,16 @@ class CheckRecordTest : public ::testing::Test {
   virtual void SetUp() {
     core::Feature* feat{nullptr};
     feat = schema_.add_features();
-    feat->set_name("real_1");
-    feat->set_feature_type(core::Feature::REAL);
+    feat->set_name("numerical_1");
+    feat->set_type(core::Feature::NUMERICAL);
 
     feat = schema_.add_features();
-    feat->set_name("real_2");
-    feat->set_feature_type(core::Feature::REAL);
+    feat->set_name("numerical_2");
+    feat->set_type(core::Feature::NUMERICAL);
 
     feat = schema_.add_features();
     feat->set_name("categorical_3");
-    feat->set_feature_type(core::Feature::CATEGORICAL);
+    feat->set_type(core::Feature::CATEGORICAL);
   }
 
   core::Schema schema_;
@@ -135,15 +136,15 @@ TEST_F(CheckRecordTest, Valid) {
   saltfish::PutRecordsRequest req;
   core::Record *record{nullptr};
   record = req.add_records()->mutable_record();
-  record->add_reals(0.1234);
-  record->add_reals(-852.32);
-  record->add_cats("blue");
+  record->add_numericals(0.1234);
+  record->add_numericals(-852.32);
+  record->add_categoricals("blue");
   EXPECT_FALSE(saltfish::check_record(schema_, *record));
 
   record = req.add_records()->mutable_record();
-  record->add_reals(0.434);
-  record->add_reals(-1052.32);
-  record->add_cats("red");
+  record->add_numericals(0.434);
+  record->add_numericals(-1052.32);
+  record->add_categoricals("red");
   EXPECT_FALSE(saltfish::check_record(schema_, *record));
 
   for (auto& tagged : req.records()) {
@@ -155,8 +156,8 @@ TEST_F(CheckRecordTest, Valid) {
 
 TEST_F(CheckRecordTest, MissingFeature) {
   core::Record record;
-  record.add_reals(0.434);
-  record.add_cats("red");
+  record.add_numericals(0.434);
+  record.add_categoricals("red");
   auto status = saltfish::check_record(schema_, record);
   EXPECT_TRUE(static_cast<bool>(status));
   EXPECT_FALSE(status.what().empty());
@@ -164,10 +165,10 @@ TEST_F(CheckRecordTest, MissingFeature) {
 
 TEST_F(CheckRecordTest, TooManyFeatures) {
   core::Record record;
-  record.add_reals(0.434);
-  record.add_reals(-1052.32);
-  record.add_cats("red");
-  record.add_cats("yellow");
+  record.add_numericals(0.434);
+  record.add_numericals(-1052.32);
+  record.add_categoricals("red");
+  record.add_categoricals("yellow");
   auto status = saltfish::check_record(schema_, record);
   EXPECT_TRUE(static_cast<bool>(status));
   EXPECT_FALSE(status.what().empty());
@@ -175,9 +176,9 @@ TEST_F(CheckRecordTest, TooManyFeatures) {
 
 TEST_F(CheckRecordTest, IncorrectFeatureType) {
   core::Record record;
-  record.add_reals(0.434);
-  record.add_cats("red");
-  record.add_cats("yellow");
+  record.add_numericals(0.434);
+  record.add_categoricals("red");
+  record.add_categoricals("yellow");
   auto status = saltfish::check_record(schema_, record);
   EXPECT_TRUE(static_cast<bool>(status));
   EXPECT_FALSE(status.what().empty());
@@ -185,9 +186,9 @@ TEST_F(CheckRecordTest, IncorrectFeatureType) {
 
 TEST_F(CheckRecordTest, InvalidFeatureInSchema) {
   core::Schema invalid_schema = schema_;
-  core::Feature* feat = invalid_schema.add_features();
-  feat->set_name("problematic_feature");
-  feat->set_feature_type(core::Feature::INVALID);
+  core::Feature* feature = invalid_schema.add_features();
+  feature->set_name("problematic_feature");
+  feature->set_type(core::Feature::INVALID);
 
   core::Record record;
   auto status = saltfish::check_record(invalid_schema, record);

@@ -24,8 +24,8 @@ SaltfishServer::SaltfishServer(const config::Saltfish& config)
                  config.maria_db().db()),
       redis_pub_(config.redis().host(), config.redis().port(),
                  config.redis().key()) {
-  for(int i = 0; i < 5; ++i) {
-    threads_.emplace_back( ([this]() { this->ios_.run(); }) );
+  for (int i = 0; i < 5; ++i) {
+    threads_.emplace_back([this]() { this->ios_.run(); });
   }
 }
 
@@ -43,16 +43,16 @@ SaltfishServer::~SaltfishServer() noexcept {
 
 void SaltfishServer::run() noexcept {
   try {
-    saltfish::SaltfishServiceImpl saltfish_serv(
+    saltfish::DatasetStoreImpl saltfish_server(
         riak_client_, sql_store_, ios_,
         config_.max_generate_id_count(),
-        config_.sources_data_bucket_prefix(),
+        config_.records_bucket_prefix(),
         config_.schemas_bucket(),
         config_.max_random_index());
     auto listener = bind(&RedisPublisher::publish, &redis_pub_, _1, _2);
-    saltfish_serv.register_listener(RequestType::ALL, listener);
+    saltfish_server.register_listener(RequestType::ALL, listener);
 
-    server_.register_service(&saltfish_serv);
+    server_.register_service(&saltfish_server);
     server_.bind(config_.bind_str());
     LOG(INFO) << "Serving requests at " << config_.bind_str() << " (riak at "
               << config_.riak().host() << ":" << config_.riak().port() << "; "

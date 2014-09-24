@@ -13,6 +13,7 @@
 #include <mutex>
 #include <string>
 #include <system_error>
+#include <vector>
 
 
 namespace sql {
@@ -29,20 +30,20 @@ std::unique_ptr<sql::Connection> connect_to_sql(
 class MetadataStore {
  public:
   virtual std::error_condition fetch_schema(
-      core::Schema& schema, const std::string& source_id) = 0;
-  virtual std::error_condition create_source(
-      const std::string& source_id, int user_id,
+      core::Schema& schema, const std::string& dataset_id) = 0;
+  virtual std::error_condition create_dataset(
+      const std::string& dataset_id, int user_id,
       const std::string& schema, const std::string& name,
       bool private_, bool frozen) = 0;
-  virtual std::error_condition delete_source(
-      int& rows_updated, const std::string& source_id) = 0;
+  virtual std::error_condition delete_dataset(
+      int& rows_updated, const std::string& dataset_id) = 0;
 
-  virtual std::error_condition get_source_by_id(
-      SourceInfo& source_info, const std::string& source_id) = 0;
-  virtual std::error_condition get_sources_by_user(
-      std::vector<SourceInfo>& sources_info, const int user_id) = 0;
-  virtual std::error_condition get_sources_by_username(
-      std::vector<SourceInfo>& sources_info, const std::string& username) = 0;
+  virtual std::error_condition get_dataset_by_id(
+      DatasetDetail& dataset_detail, const std::string& dataset_id) = 0;
+  virtual std::error_condition get_datasets_by_user(
+      std::vector<DatasetDetail>& dataset_details, const int user_id) = 0;
+  virtual std::error_condition get_datasets_by_username(
+      std::vector<DatasetDetail>& dataset_details, const std::string& username) = 0;
 };
 
 class MetadataSqlStore : MetadataStore {
@@ -54,26 +55,26 @@ class MetadataSqlStore : MetadataStore {
   ~MetadataSqlStore() { close(); }
 
   virtual std::error_condition fetch_schema(
-      core::Schema& schema, const std::string& source_id) override;
-  virtual std::error_condition create_source(
-      const std::string& source_id, int user_id,
+      core::Schema& schema, const std::string& dataset_id) override;
+  virtual std::error_condition create_dataset(
+      const std::string& dataset_id, int user_id,
       const std::string& schema, const std::string& name,
       bool private_, bool frozen) override;
-  virtual std::error_condition delete_source(
-      int& rows_updated, const std::string& source_id) override;
+  virtual std::error_condition delete_dataset(
+      int& rows_updated, const std::string& dataset_id) override;
 
-  virtual std::error_condition get_source_by_id(
-      SourceInfo& source_info, const std::string& source_id) override;
-  virtual std::error_condition get_sources_by_user(
-      std::vector<SourceInfo>& sources_info, const int user_id) override;
-  virtual std::error_condition get_sources_by_username(
-      std::vector<SourceInfo>& sources_info, const std::string& username) override;
+  virtual std::error_condition get_dataset_by_id(
+      DatasetDetail& dataset_detail, const std::string& dataset_id) override;
+  virtual std::error_condition get_datasets_by_user(
+      std::vector<DatasetDetail>& dataset_details, const int user_id) override;
+  virtual std::error_condition get_datasets_by_username(
+      std::vector<DatasetDetail>& dataset_details, const std::string& username) override;
 
   bool ensure_connected();
   void close();
  private:
-  std::error_condition get_sources_by(
-      std::vector<SourceInfo>& sources_info, const int user_id=0,
+  std::error_condition get_datasets_by(
+      std::vector<DatasetDetail>& dataset_details, const int user_id=0,
       const std::string& username="");
 
   const std::string host_;
@@ -94,34 +95,34 @@ class MetadataSqlStoreTasklet {
       const std::string& user, const std::string& pass, const std::string& db);
 
   std::error_condition fetch_schema(
-      core::Schema& schema, const std::string& source_id);
-  std::error_condition create_source(
-      const std::string& source_id, int user_id,
+      core::Schema& schema, const std::string& dataset_id);
+  std::error_condition create_dataset(
+      const std::string& dataset_id, int user_id,
       const std::string& schema, const std::string& name,
       bool private_, bool frozen);
-  std::error_condition delete_source(
-      int& rows_updated, const std::string& source_id);
+  std::error_condition delete_dataset(
+      int& rows_updated, const std::string& dataset_id);
 
-  std::error_condition get_source_by_id(
-      SourceInfo& source_info, const std::string& source_id);
-  std::error_condition get_sources_by_user(
-      std::vector<SourceInfo>& sources_info, const int user_id);
-  std::error_condition get_sources_by_username(
-      std::vector<SourceInfo>& sources_info, const std::string& username);
+  std::error_condition get_dataset_by_id(
+      DatasetDetail& dataset_detail, const std::string& dataset_id);
+  std::error_condition get_datasets_by_user(
+      std::vector<DatasetDetail>& dataset_details, const int user_id);
+  std::error_condition get_datasets_by_username(
+      std::vector<DatasetDetail>& dataset_details, const std::string& username);
 
   using fetch_schema_type = std::function<
     std::error_condition(core::Schema&, const std::string&)>;
-  using create_source_type = std::function<std::error_condition(
+  using create_dataset_type = std::function<std::error_condition(
       const std::string&, int, const std::string&, const std::string&, bool, bool)>;
-  using delete_source_type = std::function<
+  using delete_dataset_type = std::function<
     std::error_condition(int&, const std::string&)>;
 
-  using get_source_by_id_type = std::function<
-    std::error_condition(SourceInfo&, const std::string&)>;
-  using get_sources_by_user_type = std::function<std::error_condition(
-      std::vector<SourceInfo>& sources_info, const int user_id)>;
-  using get_sources_by_username_type = std::function<std::error_condition(
-      std::vector<SourceInfo>& sources_info, const std::string& username)>;
+  using get_dataset_by_id_type = std::function<
+    std::error_condition(DatasetDetail&, const std::string&)>;
+  using get_datasets_by_user_type = std::function<std::error_condition(
+      std::vector<DatasetDetail>& dataset_details, const int user_id)>;
+  using get_datasets_by_username_type = std::function<std::error_condition(
+      std::vector<DatasetDetail>& dataset_details, const std::string& username)>;
 
  private:
   template<typename T>
@@ -130,12 +131,12 @@ class MetadataSqlStoreTasklet {
   std::unique_ptr<MetadataSqlStore> store_;
   lib::Tasklet tasklet_;
   ts_ptr<lib::Connection<fetch_schema_type>> fetch_schema_;
-  ts_ptr<lib::Connection<create_source_type>> create_source_;
-  ts_ptr<lib::Connection<delete_source_type>> delete_source_;
+  ts_ptr<lib::Connection<create_dataset_type>> create_dataset_;
+  ts_ptr<lib::Connection<delete_dataset_type>> delete_dataset_;
 
-  ts_ptr<lib::Connection<get_source_by_id_type>> get_source_by_id_;
-  ts_ptr<lib::Connection<get_sources_by_user_type>> get_sources_by_user_;
-  ts_ptr<lib::Connection<get_sources_by_username_type>> get_sources_by_username_;
+  ts_ptr<lib::Connection<get_dataset_by_id_type>> get_dataset_by_id_;
+  ts_ptr<lib::Connection<get_datasets_by_user_type>> get_datasets_by_user_;
+  ts_ptr<lib::Connection<get_datasets_by_username_type>> get_datasets_by_username_;
 };
 
 }}}  // namespace reinferio::saltfish::store

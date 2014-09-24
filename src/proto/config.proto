@@ -20,14 +20,14 @@ message Redis {
 }
 
 message Saltfish {
-  optional string bind_str = 1  [default = "tcp://127.0.0.1:5555"];
+  optional string  bind_str = 1  [default = "tcp://127.0.0.1:5555"];
 
-  optional Riak riak = 2;
+  optional Riak    riak = 2;
   optional MariaDB maria_db = 3;
-  optional Redis redis = 4;
+  optional Redis   redis = 4;
 
-  optional uint32 max_generate_id_count = 5      [default = 1000];
-  optional uint32 max_random_index = 8           [default = 1000000000];
-  optional string sources_data_bucket_prefix = 6 [default = "/sources/data"];
-  optional string schemas_bucket = 7             [default = "/sources/schemas"];
+  optional uint32  max_generate_id_count = 5   [default = 1000];
+  optional uint32  max_random_index = 8        [default = 1000000000];
+  optional string  records_bucket_prefix = 6   [default = "datasets:records:"];
+  optional string  schemas_bucket = 7          [default = "datasets:schemas"];
 }

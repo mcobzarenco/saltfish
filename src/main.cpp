@@ -136,9 +136,9 @@ int main(int argc, char **argv) {
         !variables[ARG_BIND_STRING].defaulted()) {
       conf.set_bind_str(bind_str);
     }
-    if (!conf.has_sources_data_bucket_prefix() ||
+    if (!conf.has_records_bucket_prefix() ||
         !variables[ARG_RECORDS_BUCKET_PREFIX].defaulted()) {
-      conf.set_sources_data_bucket_prefix(records_bucket_prefix);
+      conf.set_records_bucket_prefix(records_bucket_prefix);
     }
     if (!conf.has_schemas_bucket() ||
         !variables[ARG_SCHEMAS_BUCKET].defaulted()) {
