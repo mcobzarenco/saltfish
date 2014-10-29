@@ -50,6 +50,48 @@ TEST(GenerateRandomString, GeneratesUniqueStrings) {
   EXPECT_EQ(N, ids.size());
 }
 
+TEST(GetMonotonousTick, UniqueAndStrictlyMonotonous) {
+  const size_t N{10000};
+  auto fill_vector = [N] (vector<int64_t>& v) {
+    for (size_t i = 0; i < N; ++i) {
+      v.push_back(saltfish::get_monotonous_ticks());
+    }
+  };
+  vector<int64_t> v1, v2, v3, v4;
+  thread t1{fill_vector, ref(v1)};
+  thread t2{fill_vector, ref(v2)};
+  thread t3{fill_vector, ref(v3)};
+  thread t4{fill_vector, ref(v4)};
+  t1.join();
+  t2.join();
+  t3.join();
+  t4.join();
+  ASSERT_EQ(v1.size(), N);
+  ASSERT_EQ(v2.size(), N);
+  ASSERT_EQ(v3.size(), N);
+  ASSERT_EQ(v4.size(), N);
+
+  vector<int64_t> sorted_v1{v1}, sorted_v2{v2}, sorted_v3{v3}, sorted_v4{v4};
+  sort(sorted_v1.begin(), sorted_v1.end());
+  sort(sorted_v2.begin(), sorted_v2.end());
+  sort(sorted_v3.begin(), sorted_v3.end());
+  sort(sorted_v4.begin(), sorted_v4.end());
+  EXPECT_EQ(v1, sorted_v1);
+  EXPECT_EQ(v2, sorted_v2);
+  EXPECT_EQ(v3, sorted_v3);
+  EXPECT_EQ(v4, sorted_v4);
+
+  vector<int64_t> merged{v1};
+  merged.insert(merged.end(), v2.begin(), v2.end());
+  merged.insert(merged.end(), v3.begin(), v3.end());
+  merged.insert(merged.end(), v4.begin(), v4.end());
+  sort(merged.begin(), merged.end());
+  auto last = unique(merged.begin(), merged.end());
+  merged.erase(last, merged.end());
+  EXPECT_EQ(4 * N, merged.size());
+}
+
+
 TEST(SchemaHasDuplicatesTest, EmptyNoDupsAndDups) {
   core::Schema schema;
   EXPECT_FALSE(saltfish::schema_has_duplicates(schema))

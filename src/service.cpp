@@ -403,6 +403,14 @@ vector<string> DatasetStoreImpl::ids_for_put_request(
 
 namespace {
 
+void add_riak_index(riak::object& object,
+                    const string index_name, const string& value) {
+  auto* index = object.raw_content().add_indexes();
+    std::chrono::milliseconds(1);
+  index->set_key(index_name);
+  index->set_value(value);
+}
+
 void put_records_put_handler(shared_ptr<ReplySync> replier,
                              rpcz::reply<PutRecordsResponse> reply,
                              const error_code error) {
@@ -417,14 +425,18 @@ void put_records_put_handler(shared_ptr<ReplySync> replier,
 }
 
 void put_records_get_handler(
-    riak::client& riak_client, const core::Record record,
-    const uint64_t random_index, shared_ptr<ReplySync> replier,
-    rpcz::reply<PutRecordsResponse> reply, const error_code error,
-    riak::object object) {
+    riak::client& riak_client, const core::Record& record,
+    const uint64_t random_index, const uint64_t sequence_index,
+    const string& source, shared_ptr<ReplySync> replier,
+    rpcz::reply<PutRecordsResponse> reply,
+    const error_code error, riak::object object) {
   if (!error) {
-    auto* index = object.raw_content().add_indexes();
-    index->set_key("randomindex_int");
-    index->set_value(to_string(random_index));
+    int64_t timestamp{
+      chrono::system_clock::now().time_since_epoch() / chrono::microseconds(1)};
+    add_riak_index(object, "timestamp_int", to_string(timestamp));
+    add_riak_index(object, "sequence_int", to_string(sequence_index));
+    add_riak_index(object, "randomindex_int", to_string(random_index));
+    if (!source.empty()) { add_riak_index(object, "source_bin", source); }
 
     record.SerializeToString(&object.value());
     auto handler = bind(&put_records_put_handler, replier, reply, _1);
@@ -504,9 +516,12 @@ void DatasetStoreImpl::put_records(
     const auto& record_id = record_ids[i];
     const auto& record = request.records(i).record();
     const uint64_t random_index{gen_random_uint64() % max_random_index_};
-    auto handler = bind(&put_records_get_handler, ref(riak_client_), record,
-                        random_index, replier, reply, _1,  _2);
+    const uint64_t sequence{static_cast<uint64_t>(get_monotonous_ticks())};
+    const string& source = request.source();
 
+    auto handler = bind(&put_records_get_handler, ref(riak_client_), ref(record),
+                        random_index, sequence, ref(source), replier, reply,
+                        _1,  _2);
     VLOG(0) << "Queueing put_record @ (b=" << bucket << " k="
             << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
     // riak_client_.fetch(bucket.str(), record_id, handler);

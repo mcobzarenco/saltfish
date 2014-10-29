@@ -40,6 +40,8 @@ DEFAULT_RIAK_PORT = 8087
 
 DATASET_ID_BYTES = 24
 RANDOM_INDEX = 'randomindex_int'
+SOURCE_INDEX = 'source_bin'
+SEQUENCE_INDEX = 'sequence_int'
 
 TEST_PASSED = '*** OK ***'
 FAILED_PREFIX = 'TEST FAILED | '
@@ -52,6 +54,11 @@ log.setLevel(logging.INFO)
 
 compiler.generate_proto(join(PROTO_ROOT, 'config.proto'), '.')
 import config_pb2
+
+
+def is_sorted(seq):
+    adj_sorted = map(lambda x: x[0] < x[1], zip(seq[:-1], seq[1:]))
+    return sum(adj_sorted) == len(seq) - 1
 
 
 def make_create_dataset_req(
@@ -75,12 +82,15 @@ def filter_by_type(seq, typ):
     return filter(lambda val: isinstance(val, typ), seq)
 
 
-def make_put_records_req(dataset_id, records=None, record_ids=None):
+def make_put_records_req(
+        dataset_id, records=None, record_ids=None, source=None):
     records = records or []
     record_ids = record_ids or [None] * len(records)
     assert len(records) == len(record_ids)
+
     request = PutRecordsRequest()
     request.dataset_id = str(dataset_id)
+    if source:  request.source = source
     for i in xrange(len(records)):
         tagged = request.records.add()
         if record_ids[i]:
@@ -141,6 +151,7 @@ class SaltfishTests(unittest.TestCase):
         conn = cls._sql.check_out_connection()
         cur = conn.cursor()
         cur.execute('DELETE FROM sources')
+        cur.execute('DELETE FROM files')
         cur.execute('DELETE FROM users')
         cls._sql.check_in_connection(conn)
 
@@ -448,6 +459,34 @@ class SaltfishTests(unittest.TestCase):
             lambda index: index[0] == RANDOM_INDEX, indexes)[0][1]
         self.assertLess(random_index_value, config.max_random_index)
 
+    def _put_records(self, dataset_id, records, source=None):
+        request = make_put_records_req(
+            dataset_id, records=records, source=source)
+        response = self._service.put_records(
+            request, deadline_ms=DEFAULT_DEADLINE)
+        return (request, response)
+
+    def _put_records_check(self, dataset_id, expected_records, record_ids):
+        assert len(expected_records) == len(record_ids)
+        bucket = self.__class__._config.records_bucket_prefix + \
+                 b64encode(dataset_id)
+        sequence_index = []
+        for i, record_id in enumerate(record_ids):
+            self.assertEqual(8, len(record_id))  # record_ids are int64_t
+            log.info('Checking record at b=%s / k=%20s)', bucket,
+                     bytes_to_int64(record_id))
+            remote = self._riakc.bucket(bucket).get(BinaryString(record_id))
+            self.assertTrue(remote.exists)
+            self.assertIsNotNone(remote.encoded_data)
+            self._check_record_indexes(remote.indexes)
+            sequence_index.append(dict(remote.indexes)[SEQUENCE_INDEX])
+
+            record = core_pb2.Record()
+            record.ParseFromString(remote.encoded_data)
+            self.assertEqual(expected_records[i], record)
+        self.assertEqual(len(expected_records), len(sequence_index))
+        self.assertTrue(is_sorted(sequence_index))
+
     def test_put_records_with_new_dataset(self):
         log.info('Creating a dataset where the records will be inserted..')
         response = self._ensure_dataset(
@@ -456,27 +495,12 @@ class SaltfishTests(unittest.TestCase):
 
         log.info('Inserting %d records into newly created dataset (id=%s)' %
                      (len(self._records), b64encode(dataset_id)))
-        put_req = make_put_records_req(dataset_id, records=self._records)
-        put_resp = self._service.put_records(put_req,
-                                             deadline_ms=DEFAULT_DEADLINE)
+        (put_req, put_resp) = self._put_records(dataset_id, self._records)
         self.assertEqual(PutRecordsResponse.OK, put_resp.status)
         self.assertEqual(len(self._records), len(put_resp.record_ids))
-        bucket = self.__class__._config.records_bucket_prefix + \
-                 b64encode(dataset_id)
 
-        for i, record_id in enumerate(put_resp.record_ids):
-            self.assertEqual(8, len(record_id))  # record_ids are int64_t
-            log.info('Checking record at b=%s / k=%20s)' %
-                     (bucket, bytes_to_int64(record_id)))
-            remote = self._riakc.bucket(bucket).get(BinaryString(record_id))
-            self.assertTrue(remote.exists)
-            self.assertIsNotNone(remote.encoded_data)
-            self._check_record_indexes(remote.indexes)
-
-
-            record = core_pb2.Record()
-            record.ParseFromString(remote.encoded_data)
-            self.assertEqual(put_req.records[i].record, record)
+        exp_records = map(lambda tagged: tagged.record, put_req.records)
+        self._put_records_check(dataset_id, exp_records, put_resp.record_ids)
 
     def test_put_records_with_nonexistent_dataset(self):
         dataset_id = os.urandom(DATASET_ID_BYTES)
@@ -487,6 +511,41 @@ class SaltfishTests(unittest.TestCase):
         self.assertEqual(PutRecordsResponse.INVALID_DATASET_ID, response.status)
         self.assertEqual(0, len(response.record_ids))
         log.info('Got error message: "%s"' % response.msg)
+
+    def test_put_records_with_source(self):
+        SPLIT = 5
+        DATASET_NAME = 'dataset-put-records-source'
+        response = self._ensure_dataset(
+            user_id=self.__class__._user_id1, name=DATASET_NAME,
+            features=self._features)
+        dataset_id = response.dataset_id
+
+        # add records with source=source-file
+        records1 = self._records[:SPLIT]
+        (put_req1, put_resp1) = self._put_records(
+            dataset_id, records1, 'source-file')
+        self.assertEqual(PutRecordsResponse.OK, put_resp1.status)
+        self.assertEqual(len(records1), len(put_resp1.record_ids))
+        exp_records1 = map(lambda tagged: tagged.record, put_req1.records)
+        self._put_records_check(dataset_id, exp_records1, put_resp1.record_ids)
+
+        # add records with source=source-api
+        records2 = self._records[SPLIT:]
+        (put_req2, put_resp2) = self._put_records(
+             dataset_id, records2, 'source-api')
+        self.assertEqual(PutRecordsResponse.OK, put_resp2.status)
+        self.assertEqual(len(records2), len(put_resp2.record_ids))
+        exp_records2 = map(lambda tagged: tagged.record, put_req2.records)
+        self._put_records_check(dataset_id, exp_records2, put_resp2.record_ids)
+
+        bucket_str = self.__class__._config.records_bucket_prefix + \
+                     b64encode(dataset_id)
+
+        bucket = self._riakc.bucket(bucket_str)
+        ids_file = bucket.get_index(SOURCE_INDEX, 'source-file').results
+        ids_api = bucket.get_index(SOURCE_INDEX, 'source-api').results
+        self.assertEqual(set(ids_file), set(put_resp1.record_ids))
+        self.assertEqual(set(ids_api), set(put_resp2.record_ids))
 
     def _make_some_datasets(self, user_id, dataset_names):
         create_reqs = {}

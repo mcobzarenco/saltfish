@@ -15,6 +15,8 @@
 #include <mysql_connection.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <random>
@@ -47,6 +49,21 @@ inline std::string gen_random_string(const uint32_t width) {
 inline uint64_t gen_random_uint64() {
   std::string id = gen_random_string(sizeof(uint64_t));
   return *reinterpret_cast<const uint64_t*>(id.data());
+}
+
+inline int64_t get_monotonous_ticks() {
+  static std::atomic<int64_t> last_tick{0};
+
+  int64_t timestamp{
+    std::chrono::system_clock::now().time_since_epoch()
+      / std::chrono::microseconds(1)};
+  int64_t old_tick{last_tick.load()};
+  int64_t new_tick{0};
+  do {
+    new_tick = std::max(timestamp, old_tick + 1);
+  } while (!std::atomic_compare_exchange_weak(
+             &last_tick, &old_tick, new_tick));
+  return new_tick;
 }
 
 inline std::string b64encode(const std::string& binary) {
