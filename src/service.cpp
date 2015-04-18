@@ -522,8 +522,8 @@ void DatasetStoreImpl::put_records(
     auto handler = bind(&put_records_get_handler, ref(riak_client_), ref(record),
                         random_index, sequence, ref(source), replier, reply,
                         _1,  _2);
-    VLOG(0) << "Queueing put_record @ (b=" << bucket << " k="
-            << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
+    // VLOG(0) << "Queueing put_record @ (b=" << bucket << " k="
+    //         << *reinterpret_cast<const int64_t*>(record_id.c_str()) << ")";
     // riak_client_.fetch(bucket.str(), record_id, handler);
     // TODO(cristicbz): Another case.
     fetch_closures.emplace_back([this, bucket, record_id, handler] () {
