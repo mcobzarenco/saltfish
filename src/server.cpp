@@ -17,14 +17,21 @@ SaltfishServer::SaltfishServer(const config::Saltfish& config)
     : config_(config), signal_ios_(), signal_thread_(),
       ios_(), work_(new boost::asio::io_service::work(ios_)), context_(1),
       application_(), server_(application_),
-      riak_client_(config.riak().host(), config.riak().port()),
+      riak_client_(config.riak().host(), config.riak().port(),
+                   riak::client::pass_through_resolver,
+                   riak::connection_options{}
+                   .num_worker_threads(8)
+                   .max_connections(512)
+                   .deadline_ms(3000)
+                   .highwatermark(65536)
+                   .connection_timeout_ms(3000)),
       sql_store_(context_, config.maria_db().host(),
                  static_cast<uint16_t>(config.maria_db().port()),
                  config.maria_db().user(), config.maria_db().password(),
                  config.maria_db().db()),
       redis_pub_(config.redis().host(), config.redis().port(),
                  config.redis().key()) {
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; i < 4; ++i) {
     threads_.emplace_back([this]() { this->ios_.run(); });
   }
 }
