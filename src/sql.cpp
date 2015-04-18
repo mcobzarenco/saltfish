@@ -21,7 +21,7 @@ constexpr uint32_t SQL_CONNECT_MAX_RETRIES = 3;
 }
 
 using namespace std;
-using namespace std::placeholders;
+namespace ph = std::placeholders;
 
 std::unique_ptr<sql::Connection> connect_to_sql(
     const std::string& host, const std::string& user,
@@ -274,7 +274,7 @@ std::error_condition MetadataSqlStoreTasklet::fetch_schema(
   if (!fetch_schema_.get()) {
     fetch_schema_.reset(new lib::Connection<fetch_schema_type>{
         std::move(tasklet_.connect(fetch_schema_type(std::bind(
-            &MetadataSqlStore::fetch_schema, store_.get(), _1, _2))))});
+            &MetadataSqlStore::fetch_schema, store_.get(), ph::_1, ph::_2))))});
   }
   return fetch_schema_->operator()(schema, dataset_id);
 }
@@ -288,7 +288,7 @@ std::error_condition MetadataSqlStoreTasklet::create_dataset(
     create_dataset_.reset(new lib::Connection<create_dataset_type>{
         std::move(tasklet_.connect(create_dataset_type(std::bind(
             &MetadataSqlStore::create_dataset, store_.get(),
-            _1, _2, _3, _4, _5, _6))))
+            ph::_1, ph::_2, ph::_3, ph::_4, ph::_5, ph::_6))))
             });
   }
   return create_dataset_->operator()(
@@ -301,7 +301,7 @@ std::error_condition MetadataSqlStoreTasklet::delete_dataset(
   if (!delete_dataset_.get()) {
     delete_dataset_.reset(new lib::Connection<delete_dataset_type>{
         std::move(tasklet_.connect(delete_dataset_type(std::bind(
-            &MetadataSqlStore::delete_dataset, store_.get(), _1, _2))))});
+            &MetadataSqlStore::delete_dataset, store_.get(), ph::_1, ph::_2))))});
   }
   return delete_dataset_->operator()(rows_updated, dataset_id);
 }
@@ -312,7 +312,7 @@ std::error_condition MetadataSqlStoreTasklet::get_dataset_by_id(
   if (!get_dataset_by_id_.get()) {
     get_dataset_by_id_.reset(new lib::Connection<get_dataset_by_id_type>{
         std::move(tasklet_.connect(get_dataset_by_id_type(std::bind(
-            &MetadataSqlStore::get_dataset_by_id, store_.get(), _1, _2))))});
+            &MetadataSqlStore::get_dataset_by_id, store_.get(), ph::_1, ph::_2))))});
   }
   return get_dataset_by_id_->operator()(datasets_detail, dataset_id);
 }
@@ -323,7 +323,8 @@ std::error_condition MetadataSqlStoreTasklet::get_datasets_by_user(
   if (!get_datasets_by_user_.get()) {
     get_datasets_by_user_.reset(new lib::Connection<get_datasets_by_user_type>{
         std::move(tasklet_.connect(get_datasets_by_user_type(std::bind(
-            &MetadataSqlStore::get_datasets_by_user, store_.get(), _1, _2))))});
+            &MetadataSqlStore::get_datasets_by_user, store_.get(),
+            ph::_1, ph::_2))))});
   }
   return get_datasets_by_user_->operator()(datasets_details, user_id);
 }
@@ -335,7 +336,8 @@ std::error_condition MetadataSqlStoreTasklet::get_datasets_by_username(
     get_datasets_by_username_.reset(
         new lib::Connection<get_datasets_by_username_type>{std::move(
             tasklet_.connect(get_datasets_by_username_type(std::bind(
-                    &MetadataSqlStore::get_datasets_by_username, store_.get(), _1, _2))))
+                    &MetadataSqlStore::get_datasets_by_username,
+                    store_.get(), ph::_1, ph::_2))))
               });
   }
   return get_datasets_by_username_->operator()(datasets_details, username);
