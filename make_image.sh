@@ -9,6 +9,6 @@ IMAGE_SHA=$REGISTRY/$REPO:$COMMIT_SHA
 IMAGE_LATEST=$REGISTRY/$REPO:latest
 
 sudo docker build --rm=true --no-cache=true -t $IMAGE_SHA .
-sudo docker tag $IMAGE_SHA $IMAGE_LATEST
+sudo docker tag -f $IMAGE_SHA $IMAGE_LATEST
 
 sudo docker push $REGISTRY/$REPO
