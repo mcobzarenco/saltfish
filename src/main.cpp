@@ -14,8 +14,8 @@ using namespace reinferio;
 namespace {
   // Defaults for command line arguments
   constexpr const char* DEFAULT_BIND_STRING{"tcp://127.0.0.1:5555"};
-  constexpr const char* DEFAULT_RECORDS_BUCKET_PREFIX{"sources:records"};
-  constexpr const char* DEFAULT_SCHEMAS_BUCKET{"sources:schemas"};
+  constexpr const char* DEFAULT_RECORDS_BUCKET_PREFIX{"datasets:records:"};
+  constexpr const char* DEFAULT_SCHEMAS_BUCKET{"datasets:schemas"};
 
   constexpr const char* DEFAULT_RIAK_HOSTNAME{"localhost"};
   constexpr uint16_t    DEFAULT_RIAK_PORT{8087};
@@ -86,7 +86,7 @@ int main(int argc, char **argv) {
      "The actual bucket = prefix + base64 encoded source id")
     (ARG_SCHEMAS_BUCKET, po::value<string>(&schemas_bucket)
      ->value_name("BUCKET")->default_value(DEFAULT_SCHEMAS_BUCKET),
-     "Riak bucket where to cache schemas for sources.")
+     "Riak bucket where to cache schemas for datasets.")
 
     (ARG_RIAK_HOSTNAME, po::value<string>(&riak_host)
      ->value_name("HOST")->default_value(DEFAULT_RIAK_HOSTNAME),
